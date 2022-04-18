@@ -1,4 +1,4 @@
-# Kubernetes The Hard Way
+# Kubernetes The Hard Way for Yandex Cloud
 
 Это перевод на русский и переложение для использования в Yandex Cloud туториала написанного
 Kelsey Hightower. Исходно [туториал](https://github.com/kelseyhightower/kubernetes-the-hard-way) предполагал
