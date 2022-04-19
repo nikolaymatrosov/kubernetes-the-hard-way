@@ -26,7 +26,6 @@ done
   
   yc vpc address delete kubernetes-the-hard-way 
   yc dns zone delete kubernetes
-  yc vpc route-table delete kubernetes-route
 }
 ```
 
@@ -36,6 +35,7 @@ done
 ```bash
 {
   yc vpc subnet delete kubernetes
+  yc vpc route-table delete kubernetes-route
   yc vpc network delete kubernetes-the-hard-way
 }  
 ```
