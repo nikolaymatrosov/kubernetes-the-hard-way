@@ -148,6 +148,7 @@ for i in 0 1 2; do
     --create-boot-disk type=network-ssd,image-folder-id=standard-images,image-family=ubuntu-2004-lts,size=200 \
     --ssh-key ~/.ssh/id_rsa.pub \
     --labels role=controller \
+    --hostname ${name} \
     --async
 done
 ```
@@ -179,18 +180,16 @@ for i in 0 1 2; do
     --ssh-key ~/.ssh/id_rsa.pub \
     --labels role=worker \
     --metadata pod-cidr=10.200.${i}.0/24 \
+    --hostname ${name} \
     --async
 done
 ```
 
-## Исправление hostname
+## Исправление DNS
 
-В Yandex Cloud по умолчанию у вас машины создадутся с hostname равным идентификатору ресурса. Чтобы выставить более
-осмысленное значение, выполните следующую команду:
 ```bash
 for instance in controller-0 controller-1 controller-2 worker-0 worker-1 worker-2; do
   EXTERNAL_IP=$(yc compute instance get ${instance} --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  ssh yc-user@${EXTERNAL_IP} -t "sudo hostnamectl set-hostname ${instance}"
   ssh yc-user@${EXTERNAL_IP} -t "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y resolvconf"
   ssh yc-user@${EXTERNAL_IP} "cat <<EOF | sudo tee /etc/resolvconf/resolv.conf.d/tail
 nameserver 10.240.0.2
