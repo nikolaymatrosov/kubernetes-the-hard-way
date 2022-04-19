@@ -67,4 +67,10 @@ static_routes:
   next_hop_address: 10.240.0.22
 ```
 
+Соединить подсеть и таблицу маршрутиризации:
+
+```bash
+yc vpc subnet update kubernetes --route-table-name kubernetes-route
+```
+
 Дальше: [Deploying the DNS Cluster Add-on](12-dns-addon.md)
