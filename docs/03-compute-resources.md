@@ -185,19 +185,6 @@ for i in 0 1 2; do
 done
 ```
 
-## Исправление DNS
-
-```bash
-for instance in controller-0 controller-1 controller-2 worker-0 worker-1 worker-2; do
-  EXTERNAL_IP=$(yc compute instance get ${instance} --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  ssh yc-user@${EXTERNAL_IP} -t "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y resolvconf"
-  ssh yc-user@${EXTERNAL_IP} "cat <<EOF | sudo tee /etc/resolvconf/resolv.conf.d/tail
-nameserver 10.240.0.2
-EOF"
-  yc compute instance restart --name=${instance} --async
-done 
-```
-
 ### Проверка
 
 Выведите список виртуальных машин.
