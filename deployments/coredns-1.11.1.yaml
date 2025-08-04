@@ -27,6 +27,13 @@ rules:
   - nodes
   verbs:
   - get
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -54,13 +61,19 @@ data:
   Corefile: |
     .:53 {
         errors
-        health
+        health {
+          lameduck 5s
+        }
         ready
         kubernetes cluster.local in-addr.arpa ip6.arpa {
           pods insecure
           fallthrough in-addr.arpa ip6.arpa
+          ttl 30
         }
         prometheus :9153
+        forward . /etc/resolv.conf {
+          max_concurrent 1000
+        }
         cache 30
         loop
         reload
@@ -95,10 +108,14 @@ spec:
         - key: "CriticalAddonsOnly"
           operator: "Exists"
       nodeSelector:
-        beta.kubernetes.io/os: linux
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
       - name: coredns
-        image: coredns/coredns:1.7.0
+        image: coredns/coredns:1.11.1
         imagePullPolicy: IfNotPresent
         resources:
           limits:
@@ -121,14 +138,6 @@ spec:
         - containerPort: 9153
           name: metrics
           protocol: TCP
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            add:
-            - NET_BIND_SERVICE
-            drop:
-            - all
-          readOnlyRootFilesystem: true
         livenessProbe:
           httpGet:
             path: /health
@@ -143,27 +152,30 @@ spec:
             path: /ready
             port: 8181
             scheme: HTTP
-      dnsPolicy: Default
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
       volumes:
-        - name: config-volume
-          configMap:
-            name: coredns
-            items:
-            - key: Corefile
-              path: Corefile
+      - name: config-volume
+        configMap:
+          name: coredns
+          items:
+          - key: Corefile
+            path: Corefile
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: kube-dns
   namespace: kube-system
-  annotations:
-    prometheus.io/port: "9153"
-    prometheus.io/scrape: "true"
   labels:
     k8s-app: kube-dns
     kubernetes.io/cluster-service: "true"
     kubernetes.io/name: "CoreDNS"
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
 spec:
   selector:
     k8s-app: kube-dns

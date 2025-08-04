@@ -1,6 +1,6 @@
 # Развертывание воркеров Kubernetes
 
-В этой лабораторной вы настроите три ноды с воркерами Kubernetes. Будут установлены следующие компоненты:
+В этой лабораторной вы настроите две ноды с воркерами Kubernetes. Будут установлены следующие компоненты:
 [runc](https://github.com/opencontainers/runc)
 , [container networking plugins](https://github.com/containernetworking/cni)
 , [containerd](https://github.com/containerd/containerd), [kubelet](https://kubernetes.io/docs/admin/kubelet) и
@@ -8,8 +8,7 @@
 
 ## Важное
 
-Команды из этой лабораторной должный выполняться на каждом инстансе воркере: `worker-0`, `worker-1`
-и `worker-2`. Зайдите на каждый инстанс.
+Команды из этой лабораторной выполняются на каждом инстансе воркере: `node-0` и `node-1`. Зайдите на каждый инстанс.
 
 ### Параллельное выполнение команд через tmux
 
@@ -17,6 +16,24 @@
 инстансах. Смотри [Параллельное выполнение команд в tmux](01-prerequisites.md)
 
 ## Настройка Kubernetes Worker Node
+
+### Подключение к worker nodes
+
+```bash
+# Подключитесь к node-0
+ssh yc-user@<node-0-external-ip>
+
+# Подключитесь к node-1
+ssh yc-user@<node-1-external-ip>
+```
+
+### Распаковка конфигураций
+
+```bash
+# Распакуйте конфигурации
+tar -xzf node-0-certificates.tar.gz  # на node-0
+tar -xzf node-1-certificates.tar.gz  # на node-1
+```
 
 Установите системные зависимости:
 
@@ -52,12 +69,12 @@ sudo swapoff -a
 ### Скачайте и установите исполняемые файлы воркеров
 
 ```bash
-K8S_VERSION=v1.21.0
+K8S_VERSION=v1.32.3
 wget -q --show-progress --https-only --timestamping \
-  https://github.com/kubernetes-sigs/cri-tools/releases/download/${K8S_VERSION}/crictl-${K8S_VERSION}-linux-amd64.tar.gz \
-  https://github.com/opencontainers/runc/releases/download/v1.0.0-rc93/runc.amd64 \
-  https://github.com/containernetworking/plugins/releases/download/v0.9.1/cni-plugins-linux-amd64-v0.9.1.tgz \
-  https://github.com/containerd/containerd/releases/download/v1.4.4/containerd-1.4.4-linux-amd64.tar.gz \
+  https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz \
+  https://github.com/opencontainers/runc/releases/download/v1.3.0-rc.1/runc.amd64 \
+  https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-amd64-v1.6.2.tgz \
+  https://github.com/containerd/containerd/releases/download/v2.1.0/containerd-2.1.0-linux-amd64.tar.gz \
   https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kubectl \
   https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kube-proxy \
   https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kubelet
@@ -80,9 +97,9 @@ sudo mkdir -p \
 ```bash
 {
   mkdir containerd
-  tar -xvf crictl-v1.21.0-linux-amd64.tar.gz
-  tar -xvf containerd-1.4.4-linux-amd64.tar.gz -C containerd
-  sudo tar -xvf cni-plugins-linux-amd64-v0.9.1.tgz -C /opt/cni/bin/
+  tar -xvf crictl-v1.32.0-linux-amd64.tar.gz
+  tar -xvf containerd-2.1.0-linux-amd64.tar.gz -C containerd
+  sudo tar -xvf cni-plugins-linux-amd64-v1.6.2.tgz -C /opt/cni/bin/
   sudo mv runc.amd64 runc
   chmod +x crictl kubectl kube-proxy kubelet runc 
   sudo mv crictl kubectl kube-proxy kubelet runc /usr/local/bin/
@@ -99,12 +116,12 @@ POD_CIDR=$(curl -s -H "Metadata-Flavor: Google" \
   http://metadata.google.internal/computeMetadata/v1/instance/attributes/pod-cidr)
 ```
 
-Создайте конфигурационный файл для сети `bridge`
+Создайте конфигурационный файл CNI:
 
 ```bash
-cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
+sudo tee /etc/cni/net.d/10-bridge.conf <<EOF
 {
-    "cniVersion": "0.4.0",
+    "cniVersion": "1.0.0",
     "name": "bridge",
     "type": "bridge",
     "bridge": "cnio0",
@@ -121,13 +138,13 @@ cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
 EOF
 ```
 
-Создайте конфигурационный файл для сети `loopback`
+Создайте конфигурационный файл для loopback:
 
 ```bash
-cat <<EOF | sudo tee /etc/cni/net.d/99-loopback.conf
+sudo tee /etc/cni/net.d/99-loopback.conf <<EOF
 {
-    "cniVersion": "0.4.0",
-    "name": "lo",
+    "cniVersion": "1.0.0",
+    "name": "loopback",
     "type": "loopback"
 }
 EOF
@@ -135,35 +152,37 @@ EOF
 
 ### Настройте containerd
 
-Создайте конфигурационный файл `containerd`:
+Создайте конфигурационный файл containerd:
 
 ```bash
 sudo mkdir -p /etc/containerd/
-```
 
-```bash
 cat << EOF | sudo tee /etc/containerd/config.toml
 [plugins]
   [plugins.cri.containerd]
     snapshotter = "overlayfs"
     [plugins.cri.containerd.default_runtime]
-      runtime_type = "io.containerd.runtime.v1.linux"
+      runtime_type = "io.containerd.runtime.v2.linux"
       runtime_engine = "/usr/local/bin/runc"
       runtime_root = ""
+    [plugins.cri.containerd.untrusted_workload_runtime]
+      runtime_type = "io.containerd.runtime.v2.linux"
+      runtime_engine = "/usr/local/bin/runc"
+      runtime_root = "/var/lib/containerd/io.containerd.runtime.v2.linux"
 EOF
 ```
 
-Создайте `containerd.service` файл описания юнита в systemd:
+Создайте systemd сервис для containerd:
 
 ```bash
 cat <<EOF | sudo tee /etc/systemd/system/containerd.service
 [Unit]
 Description=containerd container runtime
 Documentation=https://containerd.io
-After=network.target
+After=network.target local-fs.target
 
 [Service]
-ExecStartPre=/sbin/modprobe overlay
+ExecStartPre=-/sbin/modprobe overlay
 ExecStart=/bin/containerd
 Restart=always
 RestartSec=5
@@ -173,23 +192,47 @@ OOMScoreAdjust=-999
 LimitNOFILE=1048576
 LimitNPROC=infinity
 LimitCORE=infinity
+TasksMax=infinity
 
 [Install]
 WantedBy=multi-user.target
 EOF
 ```
 
-### Настройте Kubelet
+### Настройте kubelet
+
+Создайте конфигурационный файл для kubelet:
 
 ```bash
-{
-  sudo mv ${HOSTNAME}-key.pem ${HOSTNAME}.pem /var/lib/kubelet/
-  sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
-  sudo mv ca.pem /var/lib/kubernetes/
-}
+sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
 ```
 
-Создайте конфигурационный файл `kubelet-config.yaml`:
+Создайте systemd сервис для kubelet:
+
+```bash
+cat <<EOF | sudo tee /etc/systemd/system/kubelet.service
+[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/kubernetes/kubernetes
+After=containerd.service
+Requires=containerd.service
+
+[Service]
+ExecStart=/usr/local/bin/kubelet \\
+  --config=/var/lib/kubelet/kubelet-config.yaml \\
+  --container-runtime-endpoint=unix:///run/containerd/containerd.sock \\
+  --kubeconfig=/var/lib/kubelet/kubeconfig \\
+  --register-node=true \\
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Создайте конфигурационный файл kubelet:
 
 ```bash
 cat <<EOF | sudo tee /var/lib/kubelet/kubelet-config.yaml
@@ -206,53 +249,23 @@ authorization:
   mode: Webhook
 clusterDomain: "cluster.local"
 clusterDNS:
-  - "10.32.0.10"
-podCIDR: "${POD_CIDR}"
-resolvConf: "/run/systemd/resolve/resolv.conf"
+- "10.32.0.10"
 runtimeRequestTimeout: "15m"
-tlsCertFile: "/var/lib/kubelet/${HOSTNAME}.pem"
-tlsPrivateKeyFile: "/var/lib/kubelet/${HOSTNAME}-key.pem"
+tlsCertFile: "/var/lib/kubernetes/${HOSTNAME}.pem"
+tlsPrivateKeyFile: "/var/lib/kubernetes/${HOSTNAME}-key.pem"
+serverTLSBootstrap: true
 EOF
 ```
 
-> Конфиг `resolvConf` используется для того чтобы избежать циклов когда используется CoreDNS при работе в системах
-> с `systemd-resolved`.
+### Настройте kube-proxy
 
-Создайте `kubelet.service` файл описания юнита в systemd:
-
-```bash
-cat <<EOF | sudo tee /etc/systemd/system/kubelet.service
-[Unit]
-Description=Kubernetes Kubelet
-Documentation=https://github.com/kubernetes/kubernetes
-After=containerd.service
-Requires=containerd.service
-
-[Service]
-ExecStart=/usr/local/bin/kubelet \\
-  --config=/var/lib/kubelet/kubelet-config.yaml \\
-  --container-runtime=remote \\
-  --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock \\
-  --image-pull-progress-deadline=2m \\
-  --kubeconfig=/var/lib/kubelet/kubeconfig \\
-  --network-plugin=cni \\
-  --register-node=true \\
-  --v=2
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### Настройте Kubernetes Proxy
+Создайте конфигурационный файл для kube-proxy:
 
 ```bash
 sudo mv kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig
 ```
 
-Создайте конфигурационный файл `kube-proxy-config.yaml`:
+Создайте конфигурационный файл kube-proxy:
 
 ```bash
 cat <<EOF | sudo tee /var/lib/kube-proxy/kube-proxy-config.yaml
@@ -265,7 +278,7 @@ clusterCIDR: "10.200.0.0/16"
 EOF
 ```
 
-Создайте `kube-proxy.service` файл описания юнита в systemd:
+Создайте systemd сервис для kube-proxy:
 
 ```bash
 cat <<EOF | sudo tee /etc/systemd/system/kube-proxy.service
@@ -284,7 +297,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-### Запустите сервис воркеров
+### Запустите сервисы
 
 ```bash
 {
@@ -294,26 +307,24 @@ EOF
 }
 ```
 
-> Помните, все команды выше нужно выполнить на всех трех воркерах `worker-0`, `worker-1` и `worker-2`.
+### Проверка
 
-## Проверка
-
-> Этот код нужно выполнять с машины откуда вы создавали окружение.
-
-Выведите список нод Kubernetes:
+Проверьте статус сервисов:
 
 ```bash
-CONTROLLER_IP=$(yc compute instance get --name=controller-0 --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-ssh yc-user@${CONTROLLER_IP} "kubectl get nodes --kubeconfig admin.kubeconfig"
+sudo systemctl status containerd kubelet kube-proxy
 ```
 
-> output
+## Альтернатива: Больше worker nodes (для продакшена)
 
-```
-NAME       STATUS   ROLES    AGE   VERSION
-worker-0   Ready    <none>   22s   v1.21.0
-worker-1   Ready    <none>   22s   v1.21.0
-worker-2   Ready    <none>   22s   v1.21.0
+Для продакшен окружения рекомендуется использовать больше worker nodes. Вот пример для 3 worker nodes:
+
+```bash
+# Создайте дополнительные worker nodes
+for i in 2; do
+  name=node-${i}
+  # ... создание машины
+done
 ```
 
-Дальше: [Настраиваем удаленный доступ kubectl](10-configuring-kubectl.md)
+Дальше: [Настраиваем удаленный доступ kubectl](11-configuring-kubectl.md)

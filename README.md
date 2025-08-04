@@ -31,15 +31,34 @@ understand how everything fits together.
 Kubernetes The Hard Way guides you through bootstrapping a highly available Kubernetes cluster with end-to-end
 encryption between components and RBAC authentication.
 
-* [kubernetes](https://github.com/kubernetes/kubernetes) v1.21.0
-* [containerd](https://github.com/containerd/containerd) v1.4.4
-* [coredns](https://github.com/coredns/coredns) v1.8.3
-* [cni](https://github.com/containernetworking/cni) v0.9.1
-* [etcd](https://github.com/etcd-io/etcd) v3.4.15
+### Modern Components (Updated 2024)
+
+* [kubernetes](https://github.com/kubernetes/kubernetes) v1.32.3
+* [containerd](https://github.com/containerd/containerd) v2.1.0
+* [coredns](https://github.com/coredns/coredns) v1.11.1
+* [cni](https://github.com/containernetworking/cni) v1.6.2
+* [etcd](https://github.com/etcd-io/etcd) v3.6.0
+* [crictl](https://github.com/kubernetes-sigs/cri-tools) v1.32.0
+* [runc](https://github.com/opencontainers/runc) v1.3.0
+
+### Simplified Architecture
+
+* **Jumpbox**: Central management machine
+* **Server**: Single control plane node
+* **Worker Nodes**: Two worker nodes for pod scheduling
+
+### Modern Features
+
+* **Pod Security Standards**: Replaced deprecated PodSecurityPolicies
+* **External Cloud Controller Manager**: Yandex Cloud integration
+* **User Namespaces**: Enhanced container isolation (v1.33+)
+* **EndpointSlices**: Modern endpoints API
+* **nftables Backend**: Improved networking performance
+* **Traffic Distribution**: Advanced load balancing (v1.32+)
 
 ## Labs
 
-This tutorial assumes you have access to the [Google Cloud Platform](https://cloud.google.com). While GCP is used for
+This tutorial assumes you have access to the [Yandex Cloud](https://cloud.yandex.ru). While Yandex Cloud is used for
 basic infrastructure requirements the lessons learned in this tutorial can be applied to other platforms.
 
 * [Prerequisites](docs/01-prerequisites.md)
@@ -55,4 +74,14 @@ basic infrastructure requirements the lessons learned in this tutorial can be ap
 * [Provisioning Pod Network Routes](docs/11-pod-network-routes.md)
 * [Deploying the DNS Cluster Add-on](docs/12-dns-addon.md)
 * [Smoke Test](docs/13-smoke-test.md)
-* [Cleaning Up](docs/14-cleanup.md)
+* [Modern Kubernetes Features](docs/14-modern-features.md)
+* [Monitoring and Observability](docs/15-monitoring-observability.md)
+* [Cleaning Up](docs/16-cleanup.md)
+
+## Cost Estimation
+
+Expected cluster cost: ~40-60₽ per hour (960-1440₽ per day)
+
+## Migration from Previous Version
+
+If you're migrating from the previous version (Kubernetes v1.21), see the [TODO.md](TODO.md) for detailed analysis of changes and migration steps.

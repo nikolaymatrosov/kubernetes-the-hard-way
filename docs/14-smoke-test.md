@@ -18,8 +18,8 @@ kubectl create secret generic kubernetes-the-hard-way \
 Выведите hexdump секрета `kubernetes-the-hard-way`, сохраненного в etcd:
 
 ```bash
-EXTERNAL_IP=$(yc compute instance get controller-0  --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  ssh yc-user@${EXTERNAL_IP} "sudo ETCDCTL_API=3 etcdctl get \
+EXTERNAL_IP=$(yc compute instance get server --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
+ssh yc-user@${EXTERNAL_IP} "sudo ETCDCTL_API=3 etcdctl get \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/etcd/ca.pem \
   --cert=/etc/etcd/kubernetes.pem \
@@ -105,33 +105,6 @@ kubectl port-forward $POD_NAME 8080:80
 ```
 Forwarding from 127.0.0.1:8080 -> 80
 Forwarding from [::1]:8080 -> 80
-```
-
-В новом терминале сделайте HTTP-запрос используя адрес перенаправления:
-
-```bash
-curl --head http://127.0.0.1:8080
-```
-
-> output
-
-```
-HTTP/1.1 200 OK
-Server: nginx/1.19.10
-Date: Sun, 02 May 2021 05:29:25 GMT
-Content-Type: text/html
-Content-Length: 612
-Last-Modified: Tue, 13 Apr 2021 15:13:59 GMT
-Connection: keep-alive
-ETag: "6075b537-264"
-Accept-Ranges: bytes
-```
-
-Переключитесь обратно на терминал, где задавали перенаправление портов и выключите его при помощи `ctrl+c`:
-
-```
-Forwarding from 127.0.0.1:8080 -> 80
-Forwarding from [::1]:8080 -> 80
 Handling connection for 8080
 ^C
 ```
@@ -183,7 +156,8 @@ nginx version: nginx/1.19.10
 ```bash
 kubectl expose deployment nginx --port 80 --type NodePort
 ```
-> Балансер использовать не получится, потому что  кластер не сконфигурирован для  использовани
+
+> Балансер использовать не получится, потому что кластер не сконфигурирован для использования
 > [cloud provider integration](https://kubernetes.io/docs/getting-started-guides/scratch/#cloud-provider).
 > Его настройка выходит за рамки этого туториала. 
 
@@ -204,7 +178,7 @@ yc vpc security-group update-rules --name=kubernetes-the-hard-way-allow-external
 Получите внешний IP-адрес воркера:
 
 ```bash
-EXTERNAL_IP=$(yc compute instance get worker-1 --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
+EXTERNAL_IP=$(yc compute instance get node-1 --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
 ```
 
 Выполните HTTP-запрос используя внешний IP-адрес и порт ноды `nginx`:
@@ -227,4 +201,4 @@ ETag: "6075b537-264"
 Accept-Ranges: bytes
 ```
 
-Дальше: [Отчистка](14-cleanup.md)
+Дальше: [Современные возможности Kubernetes](15-modern-features.md)

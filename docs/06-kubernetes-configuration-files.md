@@ -5,6 +5,11 @@
 , также известные как `kubeconfigs`. При помощи них клиенты находят сервера и аутентифицируются на серверах Kubernetes
 API.
 
+## Важное
+
+**Все команды в этой главе выполняются на jumpbox** - центральной машине управления кластером. 
+Это упрощает процесс и обеспечивает централизованное управление конфигурациями.
+
 ## Клиентские конфиги для аутентификации
 
 На этом шаге вы сгенерируете файлы kubeconfig для клиентов `controller manager`, `kubelet`, `kube-proxy` и `scheduler`,
@@ -20,6 +25,9 @@ Kubernetes.
 Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```bash
+# На jumpbox
+cd ~/kubernetes-the-hard-way/certificates
+
 KUBERNETES_PUBLIC_ADDRESS=$(yc vpc address get kubernetes-the-hard-way --format json | jq '.external_ipv4_address.address' -r)
 ```
 
@@ -35,7 +43,7 @@ Kubernetes [Node Authorizer](https://kubernetes.io/docs/admin/authorization/node
 Сгенерируем kubeconfig файл для каждой ноды:
 
 ```bash
-for instance in worker-0 worker-1 worker-2; do
+for instance in node-0 node-1; do
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
@@ -60,9 +68,8 @@ done
 Результат:
 
 ```
-worker-0.kubeconfig
-worker-1.kubeconfig
-worker-2.kubeconfig
+node-0.kubeconfig
+node-1.kubeconfig
 ```
 
 ### Файл конфигурации для kube-proxy
@@ -100,7 +107,7 @@ kube-proxy.kubeconfig
 
 ### Файл конфигурации для kube-controller-manager
 
-Сгенерируем kubeconfig файл для сервиса `kube-controller-manager`:
+Сгенерируем kubeconfig файл для `kube-controller-manager`:
 
 ```bash
 {
@@ -133,7 +140,7 @@ kube-controller-manager.kubeconfig
 
 ### Файл конфигурации для kube-scheduler
 
-Сгенерируем kubeconfig файл для сервиса `kube-scheduler`:
+Сгенерируем kubeconfig файл для `kube-scheduler`:
 
 ```bash
 {
@@ -164,7 +171,7 @@ kube-controller-manager.kubeconfig
 kube-scheduler.kubeconfig
 ```
 
-### The admin Kubernetes Configuration File
+### Файл конфигурации для admin
 
 Сгенерируем kubeconfig файл для пользователя `admin`:
 
@@ -173,7 +180,7 @@ kube-scheduler.kubeconfig
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.pem \
     --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
+    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
     --kubeconfig=admin.kubeconfig
 
   kubectl config set-credentials admin \
@@ -197,34 +204,40 @@ kube-scheduler.kubeconfig
 admin.kubeconfig
 ```
 
-##       
+## Распределение конфигурационных файлов
 
-## Разложим файлы конфигурации
-
-
-Скопируем нужные файлы kubeconfig для `kubelet` и `kube-proxy` на каждый воркер:
-Copy the appropriate `kubelet` and `kube-proxy` kubeconfig files to each worker instance:
-
+Скопируйте конфигурационные файлы на соответствующие машины:
 
 ```bash
-for instance in worker-0 worker-1 worker-2; do
-  EXTERNAL_IP=$(yc compute instance get ${instance} --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  for filename in ${instance}.kubeconfig kube-proxy.kubeconfig; do
-    scp $filename yc-user@$EXTERNAL_IP:~/
-  done
-done
+# Создайте архивы с конфигурациями
+tar -czf server-configs.tar.gz \
+  kube-controller-manager.kubeconfig kube-scheduler.kubeconfig
+
+tar -czf node-0-configs.tar.gz \
+  node-0.kubeconfig kube-proxy.kubeconfig
+
+tar -czf node-1-configs.tar.gz \
+  node-1.kubeconfig kube-proxy.kubeconfig
+
+# Скопируйте архивы на машины
+scp server-configs.tar.gz yc-user@<server-external-ip>:~/
+scp node-0-configs.tar.gz yc-user@<node-0-external-ip>:~/
+scp node-1-configs.tar.gz yc-user@<node-1-external-ip>:~/
 ```
 
-Скопируем нужные файлы kubeconfig для `kube-controller-manager` и `kube-scheduler` на каждую машину контроллера:
-Copy the appropriate `kube-controller-manager` and `kube-scheduler` kubeconfig files to each controller instance:
+## Проверка конфигураций
+
+Проверьте, что все конфигурационные файлы созданы корректно:
 
 ```bash
-for instance in controller-0 controller-1 controller-2; do
-  EXTERNAL_IP=$(yc compute instance get ${instance} --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  for filename in admin.kubeconfig kube-controller-manager.kubeconfig kube-scheduler.kubeconfig; do
-    scp $filename yc-user@$EXTERNAL_IP:~/
-  done
-done
+# Проверьте конфигурацию admin
+kubectl --kubeconfig=admin.kubeconfig version
+
+# Проверьте конфигурацию node-0
+kubectl --kubeconfig=node-0.kubeconfig version
+
+# Проверьте конфигурацию node-1
+kubectl --kubeconfig=node-1.kubeconfig version
 ```
 
-Дальше: [Генерируем Data Encryption конфиг и ключ](06-data-encryption-keys.md)
+Дальше: [Генерируем ключи шифрования данных](07-data-encryption-keys.md)

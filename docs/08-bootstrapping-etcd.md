@@ -1,26 +1,40 @@
 # Развертывание кластера etcd
 
 Компоненты Kubernetes не содержат состояния(stateless) и хранят его в [etcd](https://github.com/etcd-io/etcd).
-В этой лабораторной вы развернете кластер etcd из трех нод и сконфигурируете его высокую доступность и удаленный доступ.
+В этой лабораторной вы развернете кластер etcd на одной ноде (упрощенная архитектура) и сконфигурируете его для удаленного доступа.
 
 ## Важное
 
-Команды из этой лабораторной должный выполняться на каждом инстансе контроллера: `controller-0`, `controller-1`
-и `controller-2`. Зайдите на каждый инстанс.
+Команды из этой лабораторной выполняются на инстансе `server`. В упрощенной архитектуре мы используем один etcd сервер
+вместо кластера из трех нод для упрощения обучения.
 
 ### Параллельное выполнение команд через tmux
 
 [tmux](https://github.com/tmux/tmux/wiki) может быть использован для параллельного выполнения команд на нескольких
 инстансах. Смотри [Параллельное выполнение команд в tmux](01-prerequisites.md)
 
-## Развертывание члена кластера etcd
+## Развертывание etcd сервера
+
+### Подключение к server
+
+```bash
+# Подключитесь к server
+ssh yc-user@<server-external-ip>
+```
+
+### Распаковка сертификатов
+
+```bash
+# Распакуйте сертификаты
+tar -xzf server-certificates.tar.gz
+```
 
 ### Скачайте и установите etcd
 
 Скачайте официальный релиз [etcd](https://github.com/etcd-io/etcd) с GitHub:
 
 ```bash
-ETCD_VER=v3.5.3
+ETCD_VER=v3.6.0
 wget -q --show-progress --https-only --timestamping \
   "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz"
 ```
@@ -79,7 +93,7 @@ ExecStart=/usr/local/bin/etcd \\
   --listen-client-urls https://${INTERNAL_IP}:2379,https://127.0.0.1:2379 \\
   --advertise-client-urls https://${INTERNAL_IP}:2379 \\
   --initial-cluster-token etcd-cluster-0 \\
-  --initial-cluster controller-0=https://10.240.0.10:2380,controller-1=https://10.240.0.11:2380,controller-2=https://10.240.0.12:2380 \\
+  --initial-cluster server=https://10.240.0.10:2380 \\
   --initial-cluster-state new \\
   --data-dir=/var/lib/etcd
 Restart=on-failure
@@ -100,13 +114,15 @@ EOF
 }
 ```
 
-> Не забудьте, что все команды выше нужно выполнить на всех хостах `controller-0`, `controller-1` и `controller-2`.
+### Проверка etcd
 
-## Проверка
-
-Выведем список членов кластера etcd:
+Проверьте, что etcd работает корректно:
 
 ```bash
+# Проверьте статус сервиса
+sudo systemctl status etcd
+
+# Проверьте подключение к etcd
 sudo ETCDCTL_API=3 etcdctl member list \
   --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/etcd/ca.pem \
@@ -114,12 +130,19 @@ sudo ETCDCTL_API=3 etcdctl member list \
   --key=/etc/etcd/kubernetes-key.pem
 ```
 
-> вывод
+> output
 
 ```
-3a57933972cb5131, started, controller-2, https://10.240.0.12:2380, https://10.240.0.12:2379, false
-f98dc20bce6225a0, started, controller-0, https://10.240.0.10:2380, https://10.240.0.10:2379, false
-ffed16798470cab5, started, controller-1, https://10.240.0.11:2380, https://10.240.0.11:2379, false
+8e9e05c52164694d, started, server, https://10.240.0.10:2380, https://127.0.0.1:2379, false
 ```
 
-Дальше: [Развертывание Kubernetes Control Plane](08-bootstrapping-kubernetes-controllers.md)
+## Альтернатива: Кластер etcd (для продакшена)
+
+Для продакшен окружения рекомендуется использовать кластер etcd из 3-5 нод. Вот пример конфигурации для кластера:
+
+```bash
+# Для кластера из 3 нод
+--initial-cluster server=https://10.240.0.10:2380,server-1=https://10.240.0.11:2380,server-2=https://10.240.0.12:2380
+```
+
+Дальше: [Развертывание Kubernetes Control Plane](09-bootstrapping-kubernetes-controllers.md)

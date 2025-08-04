@@ -34,15 +34,14 @@ resources:
       - identity: {}
 EOF
 ```
-Скопируйте `encryption-config.yaml` на каждый контроллер:
+Скопируйте `encryption-config.yaml` на server:
 
 ```bash
-for instance in controller-0 controller-1 controller-2; do
-  EXTERNAL_IP=$(yc compute instance get ${instance} --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
-  for filename in encryption-config.yaml; do
-    scp $filename yc-user@$EXTERNAL_IP:~/
-  done
-done
+# Получите внешний IP server
+SERVER_EXTERNAL_IP=$(yc compute instance get server --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
+
+# Скопируйте файл на server
+scp encryption-config.yaml yc-user@$SERVER_EXTERNAL_IP:~/
 ```
 
-Дальше: [Развертывание кластера etcd](07-bootstrapping-etcd.md)
+Дальше: [Развертывание кластера etcd](08-bootstrapping-etcd.md)

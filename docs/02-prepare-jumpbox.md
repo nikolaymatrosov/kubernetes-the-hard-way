@@ -1,9 +1,15 @@
-# Создание виртуальных машин
+# Подготовка Jumpbox и инфраструктуры
 
-Kubernetes требуется набор ВМ для размещения control plane Kubernetes и рабочих узлов, на которых находятся в итоге и
-будут бежать контейнеры. В этой лабораторной работе вы подготовите вычислительные ресурсы, необходимые для запуска
-безопасного и высокодоступного кластера Kubernetes в одной
-[зоне доступности](https://cloud.yandex.ru/docs/overview/concepts/geo-scope)
+На этом шаге вы создадите базовую инфраструктуру и jumpbox - центральную машину для управления кластером Kubernetes.
+
+## Упрощенная архитектура
+
+В современной версии туториала мы используем упрощенную архитектуру:
+- **Jumpbox**: Центральная машина для управления кластером
+- **Server**: Один control plane узел (вместо трех для упрощения)
+- **Worker nodes**: Два рабочих узла для запуска подов
+
+Это делает туториал более доступным для изучения, сохраняя при этом все ключевые концепции.
 
 ## Сеть
 
@@ -104,6 +110,7 @@ yc vpc address list
 | e9b***************** | kubernetes-the-hard-way | 51.250.***.*** | true     | false |
 +----------------------+-------------------------+----------------+----------+-------+
 ```
+
 ## Создадим внутреннюю DNS зону
 
 ```bash
@@ -111,84 +118,36 @@ NETWORK_ID=$(yc vpc network get kubernetes-the-hard-way --format json | jq '.id'
 yc dns zone create --name=kubernetes --zone=. --private-visibility=true --network-ids=${NETWORK_ID}
 ```
 
-
 ## Доступ по SSH
 
 Для доступа по SSH будет использоваться пара ключей публичный и приватный. Публичный будет передан при создании ВМ в
 команду `yc`. Если у вас нет ключей, то вы можете создать их
 по [инструкции](https://cloud.yandex.ru/docs/compute/operations/vm-connect/ssh#creating-ssh-keys)
 
-## Виртуальные машины
+## Создание Jumpbox
 
-В этой лабораторной мы будем использовать ВМ на [Ubuntu Server](https://www.ubuntu.com/server) 20.04, который имеет
-хорошую поддержку [containerd container runtime](https://github.com/containerd/containerd). Каждый инстанс будет
-развернут с внешним IP, чтобы облегчить процесс настройки Kubernetes.
+### Jumpbox
 
-
-> Суммарный объем создаваемых дисков превышает стартовую квоту. Вам потребуется запросить
-> ее [повышение](https://console.cloud.yandex.ru/cloud?section=quotas
-
-### Kubernetes контроллеры
-
-Создадим три виртуальные машины, на которых разместим Kubernetes control plane.
+Создайте jumpbox - центральную машину для управления кластером:
 
 ```bash
-for i in 0 1 2; do
-  name=controller-${i}
-  DNS_ZONE_ID=$(yc dns zone get kubernetes --format json | jq '.id' -r)
-  INTERNAL_SG=$(yc vpc security-group get kubernetes-the-hard-way-allow-internal --format json | jq '.id' -r)
-  EXTERNAL_SG=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
-  BALANCER_SG=$(yc vpc security-group get kubernetes-the-hard-way-allow-balancer --format json | jq '.id' -r)
-  yc compute instance create \
-    --name ${name} \
-    --zone ru-central1-a \
-    --cores 2 \
-    --memory 8 \
-    --network-interface security-group-ids=\[${INTERNAL_SG},${EXTERNAL_SG},${BALANCER_SG}\],subnet-name=kubernetes,nat-ip-version=ipv4,ipv4-address=10.240.0.1${i},dns-record-spec=\{name=${name}.,dns-zone-id=${DNS_ZONE_ID},ttl=300\} \
-    --create-boot-disk type=network-ssd,image-folder-id=standard-images,image-family=ubuntu-2004-lts,size=200 \
-    --ssh-key ~/.ssh/id_rsa.pub \
-    --labels role=controller \
-    --hostname ${name} \
-    --async
-done
-```
-
-### Воркеры Kubernetes
-
-Для каждого воркера нужно аллоцировать подсеть для pod'ов из CIDR диапазона доступного кластеру Kubernetes. Они будут
-использованы в одном следующих шагов для настройки сетевого взаимодействия контейнеров.
-Чтобы передать эту информацию внутрь ВМ, мы воспользуемся метадатой машины, куда передадим нужное значение `pod-cidr`.
-
-> CIDR диапазон кластера Kubernetes задается флагом `--cluster-cidr` контроллер менеджера. В этом туториале мы будем
-> использовать CIDR диапазон `10.200.0.0/16`, который поддерживает до 254 подсетей.
-
-Создадим три виртуальные машины, которые будут обслуживать воркер ноды Kubernetes:
-
-```bash
-for i in 0 1 2; do
-  name=worker-${i}
-  DNS_ZONE_ID=$(yc dns zone get kubernetes --format json | jq '.id' -r)
-  INTERNAL_SG=$(yc vpc security-group get kubernetes-the-hard-way-allow-internal --format json | jq '.id' -r)
-  EXTERNAL_SG=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
-  yc compute instance create \
-    --name ${name} \
-    --zone ru-central1-a \
-    --cores 2 \
-    --memory 8 \
-    --network-interface security-group-ids=\[${INTERNAL_SG},${EXTERNAL_SG}\],subnet-name=kubernetes,nat-ip-version=ipv4,ipv4-address=10.240.0.2${i},dns-record-spec=\{name=${name}.,dns-zone-id=${DNS_ZONE_ID},ttl=300\} \
-    --create-boot-disk type=network-ssd,image-folder-id=standard-images,image-family=ubuntu-2004-lts,size=200 \
-    --ssh-key ~/.ssh/id_rsa.pub \
-    --labels role=worker \
-    --metadata pod-cidr=10.200.${i}.0/24 \
-    --hostname ${name} \
-    --async
-done
+yc compute instance create \
+  --name jumpbox \
+  --zone ru-central1-a \
+  --network-interface subnet-name=kubernetes,security-group-ids=kubernetes-the-hard-way-allow-external \
+  --memory 2 \
+  --cores 1 \
+  --core-fraction 5 \
+  --disk-type network-ssd \
+  --disk-size 20 \
+  --create-boot-disk type=network-ssd,image-folder-id=standard-images,image-family=debian-12 \
+  --ssh-key ~/.ssh/id_rsa.pub \
+  --platform-id standard-v3
 ```
 
 ### Проверка
 
-Выведите список виртуальных машин.
-List the compute instances in your default compute zone:
+Выведите список виртуальных машин:
 
 ```bash
 yc compute instance list
@@ -197,26 +156,36 @@ yc compute instance list
 > output
 
 ```
-+----------------------+--------------+---------------+---------+---------------+-------------+
-|          ID          |     NAME     |    ZONE ID    | STATUS  |  EXTERNAL IP  | INTERNAL IP |
-+----------------------+--------------+---------------+---------+---------------+-------------+
-| fhm****************f | controller-1 | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.11 |
-| fhm****************4 | controller-2 | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.12 |
-| fhm****************k | controller-0 | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.10 |
-| fhm****************o | worker-2     | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.22 |
-| fhm****************p | worker-1     | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.21 |
-| fhm****************3 | worker-0     | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.20 |
-+----------------------+--------------+---------------+---------+---------------+-------------+
++----------------------+--------+---------------+---------+---------------+-------------+
+|          ID          |  NAME  |    ZONE ID    | STATUS  |  EXTERNAL IP  | INTERNAL IP |
++----------------------+--------+---------------+---------+---------------+-------------+
+| fhm****************f | jumpbox| ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.5  |
++----------------------+--------+---------------+---------+---------------+-------------+
 ```
 
 ## Проверка доступа по SSH
 
-Давайте проверим есть ли у нас доступ к виртуальной машине `controller-0`.
+Давайте проверим есть ли у нас доступ к виртуальной машине `jumpbox`.
 Для этого скопируем ее внешний ip в команду:
 
 ```bash
-ssh yc-user@51.250.**.***
+# Получите внешний IP jumpbox
+JUMPBOX_IP=$(yc compute instance get jumpbox --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
+echo "Jumpbox IP: $JUMPBOX_IP"
+
+# Проверьте доступ
+ssh yc-user@$JUMPBOX_IP
 ```
 
+## Подготовка к следующему шагу
 
-Дальше: [Создание CA и генерация TLS сертификатов](04-certificate-authority.md)
+Теперь у вас есть:
+- ✅ Сеть `kubernetes-the-hard-way` с подсетью `kubernetes`
+- ✅ Группы безопасности для внутреннего и внешнего трафика
+- ✅ Статический IP для Kubernetes API
+- ✅ DNS зона для внутреннего разрешения имен
+- ✅ Jumpbox для централизованного управления
+
+В следующем шаге мы установим инструменты на jumpbox и подготовим его для управления кластером.
+
+Дальше: [Установка инструментов](03-client-tools.md)
