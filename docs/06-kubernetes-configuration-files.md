@@ -12,17 +12,15 @@ API.
 
 ## Клиентские конфиги для аутентификации
 
-На этом шаге вы сгенерируете файлы kubeconfig для клиентов `controller manager`, `kubelet`, `kube-proxy` и `scheduler`,
-а также для пользователя `admin`.
+На этом шаге вы сгенерируете файлы kubeconfig для клиентов `kubelet` и пользователя `admin`.
 
-### Kubernetes Public IP Address
+### Получение публичного IP адреса Kubernetes
 
 Каждый kubeconfig требует сервер Kubernetes API, к которому будет подключаться. Для обеспечения высокой доступности
 будем использовать IP-адрес, который назначим внешнему балансировщику нагрузки, который поставим перед серверами API
 Kubernetes.
 
 Получим IP адрес `kubernetes-the-hard-way`:
-Retrieve the `kubernetes-the-hard-way` static IP address:
 
 ```bash
 # На jumpbox
@@ -33,41 +31,58 @@ KUBERNETES_PUBLIC_ADDRESS=$(yc vpc address get kubernetes-the-hard-way --format 
 
 ### Конфигурационный файл для kubelet
 
-Когда вы генерируете kubeconfig для кублетов, должен быть использован клиентский сертификат соответсвующий имени ноды.
+Когда вы генерируете kubeconfig для кублетов, должен быть использован клиентский сертификат соответствующий имени ноды.
 Таким образом вы можете быть уверены, что у кублета получится авторизоваться через
-Kubernetes [Node Authorizer](https://kubernetes.io/docs/admin/authorization/node/).
+Kubernetes [Node Authorizer](https://kubernetes.io/docs/reference/access-authn-authz/node/).
 
-> Следующие команды команды должны выполняться из директории, которая использовалась в передыдущей
-> лабораторной [Создание CA и генерация TLS сертификатов](04-certificate-authority.md) lab.
+> Следующие команды должны выполняться из директории, которая использовалась в предыдущей
+> лабораторной [Создание CA и генерация TLS сертификатов](05-certificate-authority.md).
 
-Сгенерируем kubeconfig файл для каждой ноды:
+Сгенерируем kubeconfig файл для рабочих нод `node-0` и `node-1`:
 
 ```bash
-for instance in node-0 node-1; do
+for host in node-0 node-1; do
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
     --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
-    --kubeconfig=${instance}.kubeconfig
+    --kubeconfig=${host}.kubeconfig
 
-  kubectl config set-credentials system:node:${instance} \
-    --client-certificate=${instance}.pem \
-    --client-key=${instance}-key.pem \
+  kubectl config set-credentials system:node:${host} \
+    --client-certificate=${host}.crt \
+    --client-key=${host}.key \
     --embed-certs=true \
-    --kubeconfig=${instance}.kubeconfig
+    --kubeconfig=${host}.kubeconfig
 
   kubectl config set-context default \
     --cluster=kubernetes-the-hard-way \
-    --user=system:node:${instance} \
-    --kubeconfig=${instance}.kubeconfig
+    --user=system:node:${host} \
+    --kubeconfig=${host}.kubeconfig
 
-  kubectl config use-context default --kubeconfig=${instance}.kubeconfig
+  kubectl config use-context default \
+    --kubeconfig=${host}.kubeconfig
 done
+```
+> Output
+```text
+Cluster "kubernetes-the-hard-way" set.
+User "system:node:node-0" set.
+Context "default" created.
+Switched to context "default".
+Cluster "kubernetes-the-hard-way" set.
+User "system:node:node-1" set.
+Context "default" created.
+Switched to context "default".
+```
+Проверим, что kubeconfig файлы были созданы:
+
+```bash
+ls -1 node-*.kubeconfig
 ```
 
 Результат:
 
-```
+```text
 node-0.kubeconfig
 node-1.kubeconfig
 ```
@@ -79,14 +94,14 @@ node-1.kubeconfig
 ```bash
 {
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
     --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
     --kubeconfig=kube-proxy.kubeconfig
 
   kubectl config set-credentials system:kube-proxy \
-    --client-certificate=kube-proxy.pem \
-    --client-key=kube-proxy-key.pem \
+    --client-certificate=kube-proxy.crt \
+    --client-key=kube-proxy.key \
     --embed-certs=true \
     --kubeconfig=kube-proxy.kubeconfig
 
@@ -95,13 +110,14 @@ node-1.kubeconfig
     --user=system:kube-proxy \
     --kubeconfig=kube-proxy.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+  kubectl config use-context default \
+    --kubeconfig=kube-proxy.kubeconfig
 }
 ```
 
 Результат:
 
-```
+```text
 kube-proxy.kubeconfig
 ```
 
@@ -112,14 +128,14 @@ kube-proxy.kubeconfig
 ```bash
 {
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
     --server=https://127.0.0.1:6443 \
     --kubeconfig=kube-controller-manager.kubeconfig
 
   kubectl config set-credentials system:kube-controller-manager \
-    --client-certificate=kube-controller-manager.pem \
-    --client-key=kube-controller-manager-key.pem \
+    --client-certificate=kube-controller-manager.crt \
+    --client-key=kube-controller-manager.key \
     --embed-certs=true \
     --kubeconfig=kube-controller-manager.kubeconfig
 
@@ -128,13 +144,14 @@ kube-proxy.kubeconfig
     --user=system:kube-controller-manager \
     --kubeconfig=kube-controller-manager.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-controller-manager.kubeconfig
+  kubectl config use-context default \
+    --kubeconfig=kube-controller-manager.kubeconfig
 }
 ```
 
 Результат:
 
-```
+```text
 kube-controller-manager.kubeconfig
 ```
 
@@ -145,14 +162,14 @@ kube-controller-manager.kubeconfig
 ```bash
 {
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
     --server=https://127.0.0.1:6443 \
     --kubeconfig=kube-scheduler.kubeconfig
 
   kubectl config set-credentials system:kube-scheduler \
-    --client-certificate=kube-scheduler.pem \
-    --client-key=kube-scheduler-key.pem \
+    --client-certificate=kube-scheduler.crt \
+    --client-key=kube-scheduler.key \
     --embed-certs=true \
     --kubeconfig=kube-scheduler.kubeconfig
 
@@ -161,13 +178,14 @@ kube-controller-manager.kubeconfig
     --user=system:kube-scheduler \
     --kubeconfig=kube-scheduler.kubeconfig
 
-  kubectl config use-context default --kubeconfig=kube-scheduler.kubeconfig
+  kubectl config use-context default \
+    --kubeconfig=kube-scheduler.kubeconfig
 }
 ```
 
 Результат:
 
-```
+```text
 kube-scheduler.kubeconfig
 ```
 
@@ -178,14 +196,14 @@ kube-scheduler.kubeconfig
 ```bash
 {
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
+    --server=https://127.0.0.1:6443 \
     --kubeconfig=admin.kubeconfig
 
   kubectl config set-credentials admin \
-    --client-certificate=admin.pem \
-    --client-key=admin-key.pem \
+    --client-certificate=admin.crt \
+    --client-key=admin.key \
     --embed-certs=true \
     --kubeconfig=admin.kubeconfig
 
@@ -194,50 +212,40 @@ kube-scheduler.kubeconfig
     --user=admin \
     --kubeconfig=admin.kubeconfig
 
-  kubectl config use-context default --kubeconfig=admin.kubeconfig
+  kubectl config use-context default \
+    --kubeconfig=admin.kubeconfig
 }
 ```
 
 Результат:
 
-```
+```text
 admin.kubeconfig
 ```
 
-## Распределение конфигурационных файлов
+## Распространение файлов конфигурации Kubernetes
 
-Скопируйте конфигурационные файлы на соответствующие машины:
-
-```bash
-# Создайте архивы с конфигурациями
-tar -czf server-configs.tar.gz \
-  kube-controller-manager.kubeconfig kube-scheduler.kubeconfig
-
-tar -czf node-0-configs.tar.gz \
-  node-0.kubeconfig kube-proxy.kubeconfig
-
-tar -czf node-1-configs.tar.gz \
-  node-1.kubeconfig kube-proxy.kubeconfig
-
-# Скопируйте архивы на машины
-scp server-configs.tar.gz yc-user@<server-external-ip>:~/
-scp node-0-configs.tar.gz yc-user@<node-0-external-ip>:~/
-scp node-1-configs.tar.gz yc-user@<node-1-external-ip>:~/
-```
-
-## Проверка конфигураций
-
-Проверьте, что все конфигурационные файлы созданы корректно:
+Скопируем kubeconfig файлы `kubelet` и `kube-proxy` на машины `node-0` и `node-1`:
 
 ```bash
-# Проверьте конфигурацию admin
-kubectl --kubeconfig=admin.kubeconfig version
+for host in node-0 node-1; do
+  ssh root@${host} "mkdir -p /var/lib/{kube-proxy,kubelet}"
 
-# Проверьте конфигурацию node-0
-kubectl --kubeconfig=node-0.kubeconfig version
+  scp kube-proxy.kubeconfig \
+    root@${host}:/var/lib/kube-proxy/kubeconfig
 
-# Проверьте конфигурацию node-1
-kubectl --kubeconfig=node-1.kubeconfig version
+  scp ${host}.kubeconfig \
+    root@${host}:/var/lib/kubelet/kubeconfig
+done
 ```
 
-Дальше: [Генерируем ключи шифрования данных](07-data-encryption-keys.md)
+Скопируем kubeconfig файлы `kube-controller-manager` и `kube-scheduler` на машину `server`:
+
+```bash
+scp admin.kubeconfig \
+  kube-controller-manager.kubeconfig \
+  kube-scheduler.kubeconfig \
+  root@server:~/
+```
+
+Далее: [Генерация ключа и конфига шифрования данных](07-data-encryption-keys.md)
