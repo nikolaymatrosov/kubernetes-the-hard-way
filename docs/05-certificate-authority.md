@@ -1,307 +1,107 @@
 # Создание CA и генерация TLS сертификатов
 
-На этом шаге мы создадим [PKI](https://en.wikipedia.org/wiki/Public_key_infrastructure), используя CloudFlare's PKI
-toolkit. Затем используем его чтобы настроить Certificate Authority и сгенерировать TLS сертификаты для ряда
-компонентов: `etcd`, `kube-apiserver`, `kube-controller-manager`, `kube-scheduler`, `kubelet` и `kube-proxy`.
-
-## Важное
-
-**Все команды в этой главе выполняются на jumpbox** - центральной машине управления кластером. 
-Это упрощает процесс и обеспечивает централизованное управление сертификатами.
+На этом шаге мы создадим [PKI Infrastructure](https://en.wikipedia.org/wiki/Public_key_infrastructure), используя openssl для настройки Certificate Authority и генерации TLS сертификатов для следующих компонентов: kube-apiserver, kube-controller-manager, kube-scheduler, kubelet и kube-proxy. Команды в этом разделе должны выполняться на `jumpbox`.
 
 ## Certificate Authority
 
-Начнем с того, что создадим Certificate Authority, который может позже быть использован для выпуска дополнительных TLS
-сертификатов.
+В этом разделе мы создадим Certificate Authority, который может быть использован для генерации дополнительных TLS сертификатов для других компонентов Kubernetes. Настройка CA и генерация сертификатов с помощью `openssl` может занять много времени, особенно если делаете это впервые. Для упрощения этого руководства я включил файл конфигурации openssl `ca.conf`, который определяет все детали, необходимые для генерации сертификатов для каждого компонента Kubernetes.
 
-Генерируем файл конфигурации CA, сертификат и приватный(закрытый) ключ:
+Потратьте время на изучение файла конфигурации `ca.conf`:
 
 ```bash
-# Подключитесь к jumpbox
-ssh yc-user@<jumpbox-external-ip>
-
-# Перейдите в директорию для сертификатов
-cd ~/kubernetes-the-hard-way
-mkdir certificates
-cd certificates
-
-{
-
-cat > ca-config.json <<EOF
-{
-  "signing": {
-    "default": {
-      "expiry": "8760h"
-    },
-    "profiles": {
-      "kubernetes": {
-        "usages": ["signing", "key encipherment", "server auth", "client auth"],
-        "expiry": "8760h"
-      }
-    }
-  }
-}
-EOF
-
-cat > ca-csr.json <<EOF
-{
-  "CN": "Kubernetes",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "Kubernetes",
-      "OU": "CA",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
-
-cfssl gencert -initca ca-csr.json | cfssljson -bare ca
-
-}
+cat ca.conf
 ```
 
-В результате мы получим следующие файлы:
+Вам не нужно понимать все в файле `ca.conf` для завершения этого руководства, но вы должны рассматривать его как отправную точку для изучения `openssl` и конфигурации, которая входит в управление сертификатами на высоком уровне.
 
-```
-ca.csr
-ca.pem
-ca-config.json
-ca-csr.json
-ca-key.pem
-```
+Каждый certificate authority начинается с приватного ключа и корневого сертификата. В этом разделе мы создадим самоподписанный certificate authority, и хотя этого достаточно для данного руководства, это не следует считать тем, что вы бы делали в реальной производственной среде.
 
-## Клиентские и серверные сертификаты
-
-Теперь вы сгенерируете клиентские и серверные сертификаты для каждого из компонентов Kubernetes и клиентский сертификат
-для пользователя `admin` в Kubernetes.
-
-### Клиентский сертификат для админа
-
-Сгенерируйте для пользователя `admin` сертификат и приватный ключ:
+Сгенерируйте файл конфигурации CA, сертификат и приватный ключ:
 
 ```bash
 {
-
-cat > admin-csr.json <<EOF
-{
-  "CN": "admin",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:masters",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
-
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  admin-csr.json | cfssljson -bare admin
-
+  openssl genrsa -out ca.key 4096
+  openssl req -x509 -new -sha512 -noenc \
+    -key ca.key -days 3653 \
+    -config ca.conf \
+    -out ca.crt
 }
 ```
 
-### Клиентские сертификаты для kubelet
+Результат:
 
-Сгенерируйте клиентские сертификаты для каждого воркера:
+```txt
+ca.crt ca.key
+```
+
+## Создание клиентских и серверных сертификатов
+
+В этом разделе вы сгенерируете клиентские и серверные сертификаты для каждого компонента Kubernetes и клиентский сертификат для пользователя `admin` в Kubernetes.
+
+Сгенерируйте сертификаты и приватные ключи:
 
 ```bash
-for instance in node-0 node-1; do
-cat > ${instance}-csr.json <<EOF
-{
-  "CN": "system:node:${instance}",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:nodes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
+certs=(
+  "admin" "node-0" "node-1"
+  "kube-proxy" "kube-scheduler"
+  "kube-controller-manager"
+  "kube-api-server"
+  "service-accounts"
+)
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=${instance},${instance}.kubernetes.internal,10.240.0.2${instance:4:1} \
-  -profile=kubernetes \
-  ${instance}-csr.json | cfssljson -bare ${instance}
+for i in ${certs[*]}; do
+  openssl genrsa -out "${i}.key" 4096
+
+  openssl req -new -key "${i}.key" -sha256 \
+    -config "ca.conf" -section ${i} \
+    -out "${i}.csr"
+
+  openssl x509 -req -days 3653 -in "${i}.csr" \
+    -copy_extensions copyall \
+    -sha256 -CA "ca.crt" \
+    -CAkey "ca.key" \
+    -CAcreateserial \
+    -out "${i}.crt"
 done
 ```
 
-### Клиентский сертификат для kube-proxy
+Результат выполнения вышеуказанной команды сгенерирует приватный ключ, запрос на сертификат и подписанный SSL сертификат для каждого из компонентов Kubernetes. Вы можете перечислить сгенерированные файлы следующей командой:
 
 ```bash
-{
-
-cat > kube-proxy-csr.json <<EOF
-{
-  "CN": "system:kube-proxy",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "system:node-proxier",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
-
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  kube-proxy-csr.json | cfssljson -bare kube-proxy
-
-}
+ls -1 *.crt *.key *.csr
 ```
 
-### Серверный сертификат для Kubernetes API
+## Распределение клиентских и серверных сертификатов
 
-Получите внешний IP-адрес балансировщика:
+В этом разделе вы скопируете различные сертификаты на каждую машину по пути, где каждый компонент Kubernetes будет искать свою пару сертификатов. В реальной среде эти сертификаты должны рассматриваться как набор чувствительных секретов, поскольку они используются компонентами Kubernetes как учетные данные для аутентификации друг с другом.
 
-```bash
-KUBERNETES_PUBLIC_ADDRESS=$(yc vpc address get kubernetes-the-hard-way --format json | jq '.external_ipv4_address.address' -r)
-```
-
-Сгенерируйте сертификат для Kubernetes API:
+Скопируйте соответствующие сертификаты и приватные ключи на машины `node-0` и `node-1`:
 
 ```bash
-{
+for host in node-0 node-1; do
+  ssh root@${host} mkdir -p /var/lib/kubelet/
 
-cat > kubernetes-csr.json <<EOF
-{
-  "CN": "kubernetes",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "Kubernetes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
+  scp ca.crt root@${host}:/var/lib/kubelet/
 
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=10.32.0.1,10.240.0.10,10.240.0.20,10.240.0.21,${KUBERNETES_PUBLIC_ADDRESS},127.0.0.1,kubernetes.default.svc.cluster.local \
-  -profile=kubernetes \
-  kubernetes-csr.json | cfssljson -bare kubernetes
+  scp ${host}.crt \
+    root@${host}:/var/lib/kubelet/kubelet.crt
 
-}
-```
-
-### Сертификат для Service Account
-
-Сгенерируйте сертификат для Service Account:
-
-```bash
-{
-
-cat > service-account-csr.json <<EOF
-{
-  "CN": "service-accounts",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "US",
-      "L": "Portland",
-      "O": "Kubernetes",
-      "OU": "Kubernetes The Hard Way",
-      "ST": "Oregon"
-    }
-  ]
-}
-EOF
-
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -profile=kubernetes \
-  service-account-csr.json | cfssljson -bare service-account
-
-}
-```
-
-## Распределение сертификатов
-
-Скопируйте сертификаты на соответствующие машины:
-
-```bash
-# Создайте архив с сертификатами для server
-tar -czf server-certificates.tar.gz \
-  ca.pem ca-key.pem kubernetes.pem kubernetes-key.pem \
-  service-account.pem service-account-key.pem
-
-# Создайте архивы с сертификатами для worker nodes
-for instance in node-0 node-1; do
-  tar -czf ${instance}-certificates.tar.gz \
-    ca.pem ${instance}.pem ${instance}-key.pem \
-    kube-proxy.pem kube-proxy-key.pem
+  scp ${host}.key \
+    root@${host}:/var/lib/kubelet/kubelet.key
 done
-
-# Скопируйте архивы на машины
-scp server-certificates.tar.gz yc-user@<server-external-ip>:~/
-scp node-0-certificates.tar.gz yc-user@<node-0-external-ip>:~/
-scp node-1-certificates.tar.gz yc-user@<node-1-external-ip>:~/
 ```
 
-## Проверка сертификатов
-
-Проверьте, что все сертификаты созданы корректно:
+Скопируйте соответствующие сертификаты и приватные ключи на машину `server`:
 
 ```bash
-# Проверьте CA сертификат
-openssl x509 -in ca.pem -text -noout
-
-# Проверьте Kubernetes API сертификат
-openssl x509 -in kubernetes.pem -text -noout
-
-# Проверьте admin сертификат
-openssl x509 -in admin.pem -text -noout
+scp \
+  ca.key ca.crt \
+  kube-api-server.key kube-api-server.crt \
+  service-accounts.key service-accounts.crt \
+  root@server:~/
 ```
 
-Дальше: [Генерируем конфиги для аутентификации в Kubernetes](06-kubernetes-configuration-files.md)
+> Клиентские сертификаты `kube-proxy`, `kube-controller-manager`, `kube-scheduler` и `kubelet` будут использоваться для генерации файлов конфигурации клиентской аутентификации в следующем разделе.
+
+Дальше: [Генерация файлов конфигурации Kubernetes для аутентификации](06-kubernetes-configuration-files.md)
+

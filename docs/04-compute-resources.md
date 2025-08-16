@@ -66,7 +66,7 @@ yc compute instance create \
   --hostname server \
   --name server \
   --zone ru-central1-a \
-  --network-interface nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=\[$SG_ID_EX,$SG_ID_IN\] \
+  --network-interface ipv4-address=10.240.0.10,nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=\[$SG_ID_EX,$SG_ID_IN\] \
   --memory 4 \
   --cores 2 \
   --core-fraction 20 \
@@ -87,7 +87,7 @@ for i in {0..1}; do
       --hostname node-$i \
       --name node-$i \
       --zone ru-central1-a \
-      --network-interface subnet-name=kubernetes,security-group-ids=$SG_ID_IN \
+      --network-interface ipv4-address=10.240.0.2$i,subnet-name=kubernetes,security-group-ids=$SG_ID_IN \
       --memory 4 \
       --cores 2 \
       --core-fraction 20 \
@@ -328,7 +328,7 @@ ff02::2 ip6-allrouters
 
 ```bash
 for host in server node-0 node-1
-   do ssh root@${host} hostname
+   do ssh -o StrictHostKeyChecking=accept-new root@${host} hostname
 done
 ```
 
