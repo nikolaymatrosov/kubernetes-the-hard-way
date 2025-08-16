@@ -24,7 +24,7 @@ Yandex Cloud, где мы будем разворачивать инфрастр
 
 По этой [инструкции](https://cloud.yandex.ru/docs/cli/quickstart) вы сможете установить и настроить `yc` CLI. 
 
-Убедитесь, что установленная версия 0.120.0 или выше:
+Убедитесь, что установленная версия 0.150.0 или выше:
 ```bash
 yc --version
 ```
@@ -42,47 +42,6 @@ brew install jq
 apt install jq
 ```
 
-## Новые компоненты (Kubernetes v1.32+)
-
-### crictl
-Утилита для взаимодействия с CRI-совместимыми контейнерными рантаймами:
-
-```bash
-# Linux
-wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz
-tar -xzf crictl-v1.32.0-linux-amd64.tar.gz
-sudo mv crictl /usr/local/bin/
-
-# macOS
-wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-darwin-amd64.tar.gz
-tar -xzf crictl-v1.32.0-darwin-amd64.tar.gz
-sudo mv crictl /usr/local/bin/
-```
-
-### runc
-Контейнерный рантайм для запуска контейнеров:
-
-```bash
-# Linux
-wget https://github.com/opencontainers/runc/releases/download/v1.3.0-rc.1/runc.amd64
-sudo mv runc.amd64 /usr/local/bin/runc
-sudo chmod +x /usr/local/bin/runc
-
-# macOS
-wget https://github.com/opencontainers/runc/releases/download/v1.3.0-rc.1/runc.darwin
-sudo mv runc.darwin /usr/local/bin/runc
-sudo chmod +x /usr/local/bin/runc
-```
-
-### containerd v2
-Новая версия containerd с улучшенной производительностью и безопасностью:
-
-```bash
-# Linux
-wget https://github.com/containerd/containerd/releases/download/v2.1.0/containerd-2.1.0-linux-amd64.tar.gz
-tar -xzf containerd-2.1.0-linux-amd64.tar.gz
-sudo mv bin/* /usr/local/bin/
-```
 
 ## Параллельное выполнение команд в tmux
 
@@ -98,4 +57,4 @@ sudo mv bin/* /usr/local/bin/
 > Чтобы включить синхронизацию, нажмите `ctrl+b`, а затем `shift+:`. Потом наберите `set synchronize-panes on`. Чтобы 
 > отключить: `set synchronize-panes off`.
 
-Дальше: [Установка jumpbox](02-prepare-jumpbox.md)
+Дальше: [Создание jumpbox](02-prepare-jumpbox.md)

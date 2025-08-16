@@ -5,6 +5,7 @@
 ## Упрощенная архитектура
 
 В современной версии туториала мы используем упрощенную архитектуру:
+
 - **Jumpbox**: Центральная машина для управления кластером
 - **Server**: Один control plane узел (вместо трех для упрощения)
 - **Worker nodes**: Два рабочих узла для запуска подов
@@ -15,8 +16,9 @@
 
 [Сетевая модель](https://kubernetes.io/docs/concepts/cluster-administration/networking/#kubernetes-model) Kubernetes
 предполагает плоскую сеть, в которой контейнеры и ноды могут общаться между собой. В случае, если вы хотели бы такого
-избежать в Kubernetes есть [network policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
-, которые определяют как будут сгруппированы контейнеры и помогут ограничить, какие контейнеры могу общаться друг ст
+избежать в Kubernetes
+есть [network policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/),
+которые определяют как будут сгруппированы контейнеры и помогут ограничить, какие контейнеры могу общаться друг ст
 другом или внешними сетевыми эндпоинтами.
 
 > Настройка сетевых политик выходит за рамки этого туториала.
@@ -48,8 +50,6 @@ yc vpc subnet create \
 
 ### Группы безопасности
 
-> Сейчас группы безопасности находятся в превью и вам придется запросить доступ к этой функциональности.
-
 Создайте группу безопасности разрешающую внутреннее общение по всем протоколам:
 
 ```bash
@@ -69,7 +69,7 @@ yc vpc security-group create --name=kubernetes-the-hard-way-allow-external \
     --rule description=internal_allow,protocol=tcp,direction=ingress,port=6443,v4-cidrs=0.0.0.0/0
 ```
 
-Создайте группу безопасности разрешающую внешний входящий и исходящий SSH, ICMP, HTTPS трафик :
+Создайте группу безопасности разрешающую healthcheck трафик для балансера нагрузки:
 
 ```bash
 yc vpc security-group create --name=kubernetes-the-hard-way-allow-balancer \
@@ -118,6 +118,20 @@ NETWORK_ID=$(yc vpc network get kubernetes-the-hard-way --format json | jq '.id'
 yc dns zone create --name=kubernetes --zone=. --private-visibility=true --network-ids=${NETWORK_ID}
 ```
 
+Убедитесь, что зона была создана:
+
+```bash
+yc dns zone list
+```
+> output
+
+```
++----------------------+------------+------+------------------------------+-------------+
+|          ID          |    NAME    | ZONE |          VISIBILITY          | DESCRIPTION |
++----------------------+------------+------+------------------------------+-------------+
+| dns52ttd************ | kubernetes |    . | PRIVATE enpllq3iak4qejns3gmb |             |
++----------------------+------------+------+------------------------------+-------------+
+```
 ## Доступ по SSH
 
 Для доступа по SSH будет использоваться пара ключей публичный и приватный. Публичный будет передан при создании ВМ в
@@ -131,16 +145,15 @@ yc dns zone create --name=kubernetes --zone=. --private-visibility=true --networ
 Создайте jumpbox - центральную машину для управления кластером:
 
 ```bash
+SG_ID=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
 yc compute instance create \
   --name jumpbox \
   --zone ru-central1-a \
-  --network-interface subnet-name=kubernetes,security-group-ids=kubernetes-the-hard-way-allow-external \
+  --network-interface nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=$SG_ID \
   --memory 2 \
-  --cores 1 \
-  --core-fraction 5 \
-  --disk-type network-ssd \
-  --disk-size 20 \
-  --create-boot-disk type=network-ssd,image-folder-id=standard-images,image-family=debian-12 \
+  --cores 2 \
+  --core-fraction 50 \
+  --create-boot-disk size=20,type=network-ssd,image-folder-id=standard-images,image-family=debian-12 \
   --ssh-key ~/.ssh/id_rsa.pub \
   --platform-id standard-v3
 ```
@@ -159,7 +172,7 @@ yc compute instance list
 +----------------------+--------+---------------+---------+---------------+-------------+
 |          ID          |  NAME  |    ZONE ID    | STATUS  |  EXTERNAL IP  | INTERNAL IP |
 +----------------------+--------+---------------+---------+---------------+-------------+
-| fhm****************f | jumpbox| ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.5  |
+| fhm***************** | jumpbox| ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.5  |
 +----------------------+--------+---------------+---------+---------------+-------------+
 ```
 
@@ -180,6 +193,7 @@ ssh yc-user@$JUMPBOX_IP
 ## Подготовка к следующему шагу
 
 Теперь у вас есть:
+
 - ✅ Сеть `kubernetes-the-hard-way` с подсетью `kubernetes`
 - ✅ Группы безопасности для внутреннего и внешнего трафика
 - ✅ Статический IP для Kubernetes API

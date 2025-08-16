@@ -9,8 +9,6 @@
 В современной версии туториала мы используем **jumpbox** - центральную машину для управления кластером. 
 Это упрощает развертывание и обновление компонентов.
 
-> **Важно**: Jumpbox будет создан в следующем шаге [Создание виртуальных машин](03-compute-resources.md) 
-> после настройки сети и групп безопасности.
 
 ## Установка CFSSL
 `cfssl` и `cfssljson` утилиты, которые понадобятся для настройки 
@@ -19,28 +17,15 @@
 
 Скачайте и установите `cfssl` и `cfssljson`:
 
-### OS X
-
 ```bash
-curl -o cfssl https://storage.googleapis.com/kubernetes-the-hard-way/cfssl/1.6.4/darwin/cfssl
-curl -o cfssljson https://storage.googleapis.com/kubernetes-the-hard-way/cfssl/1.6.4/darwin/cfssljson
-chmod +x cfssl cfssljson
-sudo mv cfssl cfssljson /usr/local/bin/
-```
-Другой способ — установить при помощи пакетного менеджера [Homebrew](https://brew.sh):
+sudo apt update && sudo apt upgrade -y
+wget https://golang.org/dl/go1.24.5.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
+source ~/.bashrc
 
-```bash
-brew install cfssl
-```
-
-### Linux
-
-```bash
-wget -q --show-progress --https-only --timestamping \
-  https://storage.googleapis.com/kubernetes-the-hard-way/cfssl/1.6.4/linux/cfssl \
-  https://storage.googleapis.com/kubernetes-the-hard-way/cfssl/1.6.4/linux/cfssljson
-chmod +x cfssl cfssljson
-sudo mv cfssl cfssljson /usr/local/bin/
+go install github.com/cloudflare/cfssl/cmd/...@latest
+sudo apt install -y jq git
 ```
 
 ### Проверка
@@ -54,8 +39,8 @@ cfssl version
 > output
 
 ```
-Version: 1.6.4
-Runtime: go1.21.0
+Version: dev
+Runtime: go1.24.5
 ```
 
 ```bash
@@ -63,34 +48,30 @@ cfssljson --version
 ```
 > output
 ```
-Version: 1.6.4
-Runtime: go1.21.0
+Version: dev
+Runtime: go1.24.5
 ```
+## Склонируйте репозиторий
+Склонируйте репозиторий с туториалом:
+
+```bash
+git clone 
+
 
 ## Установите kubectl
 
 `kubectl` утилита командной строки используемая для взаимодействия с Kubernetes API Server. Скачайте и установите
 `kubectl` из официальных источников:
 
-### OS X
-
-```bash
-curl -o kubectl https://storage.googleapis.com/kubernetes-release/release/v1.32.3/bin/darwin/amd64/kubectl
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-```
-
-Или вы также можете воспользоваться Homebrew.
-```bash
-brew install kubectl
-```
 
 ### Linux
 
 ```bash
-wget https://storage.googleapis.com/kubernetes-release/release/v1.32.3/bin/linux/amd64/kubectl
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+mv kubectl /usr/local/bin/kubectl
+chmod +x /usr/local/bin/kubectl
 ```
 
 ### Проверка
@@ -104,7 +85,8 @@ kubectl version --client
 > output
 
 ```
-Client Version: version.Info{Major:"1", Minor:"32", GitVersion:"v1.32.3", GitCommit:"a0c1c0b2d2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", GitTreeState:"clean", BuildDate:"2024-01-15T16:31:21Z", GoVersion:"go1.21.0", Compiler:"gc", Platform:"linux/amd64"}
+Client Version: v1.33.3
+Kustomize Version: v5.6.0
 ```
 
 ## Централизованное управление бинарными файлами
@@ -122,6 +104,13 @@ mkdir -p ~/kubernetes-the-hard-way/{client,controller,worker}
 mkdir -p ~/kubernetes-the-hard-way/bin
 ```
 
+## Установка компонентов
+
+```bash
+apt-get update
+apt-get -y install wget curl vim openssl git
+```
+
 ### Загрузка компонентов
 
 ```bash
@@ -134,9 +123,12 @@ ETCD_VERSION="v3.6.0"
 
 # Скачайте Kubernetes компоненты
 wget -q --show-progress --https-only --timestamping \
-  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-apiserver" \
-  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-controller-manager" \
-  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-scheduler" \
+  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-apiserver"
+wget -q --show-progress --https-only --timestamping \
+  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-controller-manager"
+wget -q --show-progress --https-only --timestamping \
+  "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kube-scheduler"
+wget -q --show-progress --https-only --timestamping \
   "https://storage.googleapis.com/kubernetes-release/release/${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
 
 # Скачайте containerd
