@@ -1,231 +1,208 @@
 # Развертывание Kubernetes Control Plane
 
-В этой лабораторной работе вы развернете Kubernetes Control Plane на одном инстансе (упрощенная архитектура) и настроите его
-для обеспечения удаленного доступа. Вы также создадите внешний балансировщик нагрузки, который даст удаленным клиентам
-доступ к API Kubernetes.
-На узле будут установлены следующие компоненты: сервер API Kubernetes, Scheduler и Controller Manager.
+В этой лабораторной вы развернете панель управления Kubernetes. Следующие компоненты будут установлены на машине
+`server`: Kubernetes API Server, Scheduler и Controller Manager.
 
-## Важное
+## Предварительные требования
 
-Команды из этой лабораторной выполняются на инстансе `server`. В упрощенной архитектуре мы используем один control plane
-узел вместо трех для упрощения обучения.
-
-### Параллельное выполнение команд через tmux
-
-[tmux](https://github.com/tmux/tmux/wiki) может быть использован для параллельного выполнения команд на нескольких
-инстансах. Смотри [Параллельное выполнение команд в tmux](01-prerequisites.md)
-
-## Развертывание Kubernetes Control Plane
-
-### Подключение к server
+Подключитесь к `jumpbox` и скопируйте бинарные файлы Kubernetes и файлы systemd unit на машину `server`:
 
 ```bash
-# Подключитесь к server
-ssh yc-user@<server-external-ip>
+scp \
+  downloads/controller/kube-apiserver \
+  downloads/controller/kube-controller-manager \
+  downloads/controller/kube-scheduler \
+  downloads/client/kubectl \
+  units/kube-apiserver.service \
+  units/kube-controller-manager.service \
+  units/kube-scheduler.service \
+  configs/kube-scheduler.yaml \
+  configs/kube-apiserver-to-kubelet.yaml \
+  root@server:~/
 ```
 
-### Распаковка конфигураций
+Команды из этой лабораторной должны выполняться на машине `server`. Подключитесь к машине `server` используя команду
+`ssh`. Пример:
 
 ```bash
-# Распакуйте конфигурации
-tar -xzf server-configs.tar.gz
+ssh root@server
 ```
 
-Создайте директорию для конфигов Kubernetes:
+## Подготовка Kubernetes Control Plane
+
+Создайте директорию конфигурации Kubernetes:
 
 ```bash
-sudo mkdir -p /etc/kubernetes/config
+mkdir -p /etc/kubernetes/config
 ```
 
-### Скачайте и установите Kubernetes Controller
+### Установка бинарных файлов Kubernetes Controller
 
-Скачайте официальный релиз Kubernetes:
-
-```bash
-K8S_VERSION=v1.32.3
-wget -q --show-progress --https-only --timestamping \
-  "https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kube-apiserver" \
-  "https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kube-controller-manager" \
-  "https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kube-scheduler" \
-  "https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kubectl"
-```
-
-Установите Kubernetes:
+Установите бинарные файлы Kubernetes:
 
 ```bash
 {
-  chmod +x kube-apiserver kube-controller-manager kube-scheduler kubectl
-  sudo mv kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
+  mv kube-apiserver \
+    kube-controller-manager \
+    kube-scheduler kubectl \
+    /usr/local/bin/
 }
 ```
 
-### Настройте сервер Kubernetes API
+### Конфигурация Kubernetes API Server
 
 ```bash
 {
-  sudo mkdir -p /var/lib/kubernetes/
+  mkdir -p /var/lib/kubernetes/
 
-  sudo mv ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem \
-    service-account-key.pem service-account.pem \
-    encryption-config.yaml /var/lib/kubernetes/
+  mv ca.crt ca.key \
+    kube-api-server.key kube-api-server.crt \
+    service-accounts.key service-accounts.crt \
+    encryption-config.yaml \
+    /var/lib/kubernetes/
 }
 ```
 
-Внутренний IP-адрес будет использован другими членима кластера для общения с API сервером. Получить внутренний адрес
-можно следующим образом:
+Создайте файл systemd unit `kube-apiserver.service`:
 
 ```bash
-INTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+mv kube-apiserver.service \
+  /etc/systemd/system/kube-apiserver.service
 ```
 
-Так как мы не настраивали yc на инстансах, а то следующий код нужно выполнить локально, а затем на серверах установить
-переменную окружения.
+### Конфигурация Kubernetes Controller Manager
+
+Переместите kubeconfig `kube-controller-manager` в нужное место:
 
 ```bash
-yc vpc address get kubernetes-the-hard-way --format json | jq '.external_ipv4_address.address' -r
+mv kube-controller-manager.kubeconfig /var/lib/kubernetes/
 ```
+
+Создайте файл systemd unit `kube-controller-manager.service`:
 
 ```bash
-KUBERNETES_PUBLIC_ADDRESS=
+mv kube-controller-manager.service /etc/systemd/system/
 ```
 
-Создайте `kube-apiserver.service` файл описания юнита в systemd:
+### Конфигурация Kubernetes Scheduler
+
+Переместите kubeconfig `kube-scheduler` в нужное место:
 
 ```bash
-cat <<EOF | sudo tee /etc/systemd/system/kube-apiserver.service
-[Unit]
-Description=Kubernetes API Server
-Documentation=https://github.com/kubernetes/kubernetes
-
-[Service]
-ExecStart=/usr/local/bin/kube-apiserver \\
-  --advertise-address=${INTERNAL_IP} \\
-  --allow-privileged=true \\
-  --apiserver-count=1 \\
-  --audit-log-maxage=30 \\
-  --audit-log-maxbackup=3 \\
-  --audit-log-maxsize=100 \\
-  --audit-log-path=/var/log/audit.log \\
-  --authorization-mode=Node,RBAC \\
-  --bind-address=0.0.0.0 \\
-  --client-ca-file=/var/lib/kubernetes/ca.pem \\
-  --enable-admission-plugins=NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \\
-  --etcd-cafile=/var/lib/kubernetes/ca.pem \\
-  --etcd-certfile=/var/lib/kubernetes/kubernetes.pem \\
-  --etcd-keyfile=/var/lib/kubernetes/kubernetes-key.pem \\
-  --etcd-servers=https://127.0.0.1:2379 \\
-  --event-ttl=1h \\
-  --encryption-provider-config=/var/lib/kubernetes/encryption-config.yaml \\
-  --kubelet-certificate-authority=/var/lib/kubernetes/ca.pem \\
-  --kubelet-client-certificate=/var/lib/kubernetes/kubernetes.pem \\
-  --kubelet-client-key=/var/lib/kubernetes/kubernetes-key.pem \\
-  --runtime-config=api/all=true \\
-  --service-account-key-file=/var/lib/kubernetes/service-account.pem \\
-  --service-account-signing-key-file=/var/lib/kubernetes/service-account-key.pem \\
-  --service-cluster-ip-range=10.32.0.0/24 \\
-  --service-node-port-range=30000-32767 \\
-  --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \\
-  --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \\
-  --v=2
-Restart=on-failure
-Type=notify
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
-EOF
+mv kube-scheduler.kubeconfig /var/lib/kubernetes/
 ```
 
-### Настройте Kubernetes Controller Manager
-
-Создайте `kube-controller-manager.service` файл описания юнита в systemd:
+Создайте конфигурационный файл `kube-scheduler.yaml`:
 
 ```bash
-cat <<EOF | sudo tee /etc/systemd/system/kube-controller-manager.service
-[Unit]
-Description=Kubernetes Controller Manager
-Documentation=https://github.com/kubernetes/kubernetes
-
-[Service]
-ExecStart=/usr/local/bin/kube-controller-manager \\
-  --bind-address=127.0.0.1 \\
-  --cluster-cidr=10.200.0.0/16 \\
-  --leader-elect=true \\
-  --root-ca-file=/var/lib/kubernetes/ca.pem \\
-  --service-account-private-key-file=/var/lib/kubernetes/service-account-key.pem \\
-  --service-cluster-ip-range=10.32.0.0/24 \\
-  --use-service-account-credentials=true \\
-  --v=2
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
+mv kube-scheduler.yaml /etc/kubernetes/config/
 ```
 
-### Настройте Kubernetes Scheduler
-
-Создайте `kube-scheduler.service` файл описания юнита в systemd:
+Создайте файл systemd unit `kube-scheduler.service`:
 
 ```bash
-cat <<EOF | sudo tee /etc/systemd/system/kube-scheduler.service
-[Unit]
-Description=Kubernetes Scheduler
-Documentation=https://github.com/kubernetes/kubernetes
-
-[Service]
-ExecStart=/usr/local/bin/kube-scheduler \\
-  --config=/etc/kubernetes/config/kube-scheduler.yaml \\
-  --v=2
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
+mv kube-scheduler.service /etc/systemd/system/
 ```
 
-Создайте конфигурационный файл для Kubernetes Scheduler:
-
-```bash
-sudo mkdir -p /etc/kubernetes/config/
-
-cat <<EOF | sudo tee /etc/kubernetes/config/kube-scheduler.yaml
-apiVersion: kubescheduler.config.k8s.io/v1
-kind: KubeSchedulerConfiguration
-clientConnection:
-  kubeconfig: "/etc/kubernetes/kube-scheduler.kubeconfig"
-leaderElection:
-  leaderElect: true
-EOF
-```
-
-### Запустите сервисы
+### Запуск служб Controller
 
 ```bash
 {
-  sudo systemctl daemon-reload
-  sudo systemctl enable kube-apiserver kube-controller-manager kube-scheduler
-  sudo systemctl start kube-apiserver kube-controller-manager kube-scheduler
+  systemctl daemon-reload
+
+  systemctl enable kube-apiserver \
+    kube-controller-manager kube-scheduler
+
+  systemctl start kube-apiserver \
+    kube-controller-manager kube-scheduler
 }
+```
+
+> Подождите до 10 секунд для полной инициализации Kubernetes API Server.
+
+Вы можете проверить, активен ли какой-либо из компонентов панели управления, используя команду `systemctl`. Например,
+чтобы проверить, полностью ли инициализирован и активен `kube-apiserver`, выполните следующую команду:
+
+```bash
+systemctl is-active kube-apiserver
+```
+
+Для более детальной проверки статуса, которая включает дополнительную информацию о процессе и сообщения журнала,
+используйте команду `systemctl status`:
+
+```bash
+systemctl status kube-apiserver
+```
+
+Если возникают ошибки или вы хотите просмотреть журналы для любого из компонентов панели управления, используйте команду
+`journalctl`. Например, чтобы просмотреть журналы для `kube-apiserver`, выполните следующую команду:
+
+```bash
+journalctl -u kube-apiserver
 ```
 
 ### Проверка
 
-Проверьте статус сервисов:
+На этом этапе компоненты панели управления Kubernetes должны быть запущены и работать. Проверьте это с помощью
+инструмента командной строки `kubectl`:
 
 ```bash
-sudo systemctl status kube-apiserver kube-controller-manager kube-scheduler
+kubectl cluster-info \
+  --kubeconfig admin.kubeconfig
 ```
 
-## Альтернатива: Высокодоступный Control Plane (для продакшена)
+```text
+Kubernetes control plane is running at https://127.0.0.1:6443
+```
 
-Для продакшен окружения рекомендуется использовать несколько control plane узлов. Вот пример конфигурации:
+## RBAC для авторизации Kubelet
+
+В этом разделе вы настроите разрешения RBAC, чтобы позволить Kubernetes API Server получать доступ к Kubelet API на
+каждом рабочем узле. Доступ к Kubelet API необходим для получения метрик, журналов и выполнения команд в подах.
+
+> Это руководство устанавливает флаг Kubelet `--authorization-mode` в `Webhook`. Режим Webhook использует
+> API [SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/#checking-api-access)
+> для определения авторизации.
+
+Команды в этом разделе повлияют на весь кластер и должны выполняться только на машине `server`.
 
 ```bash
-# Для кластера из 3 control plane узлов
---apiserver-count=3
---etcd-servers=https://10.240.0.10:2379,https://10.240.0.11:2379,https://10.240.0.12:2379
+ssh root@server
 ```
 
-Дальше: [Развертывание воркеров Kubernetes](10-bootstrapping-kubernetes-workers.md)
+Создайте [ClusterRole](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole)
+`system:kube-apiserver-to-kubelet` с разрешениями для доступа к Kubelet API и выполнения наиболее распространенных
+задач, связанных с управлением подами:
+
+```bash
+kubectl apply -f kube-apiserver-to-kubelet.yaml \
+  --kubeconfig admin.kubeconfig
+```
+
+### Проверка
+
+На этом этапе панель управления Kubernetes запущена и работает. Выполните следующие команды с машины `jumpbox`, чтобы
+убедиться, что она работает:
+
+Сделайте HTTP-запрос с Jumphost для получения информации о версии Kubernetes:
+
+```bash
+curl --cacert ca.crt \
+  https://server.kubernetes.local:6443/version
+```
+
+```text
+{
+  "major": "1",
+  "minor": "32",
+  "gitVersion": "v1.32.3",
+  "gitCommit": "32cc146f75aad04beaaa245a7157eb35063a9f99",
+  "gitTreeState": "clean",
+  "buildDate": "2025-03-11T19:52:21Z",
+  "goVersion": "go1.23.6",
+  "compiler": "gc",
+  "platform": "linux/arm64"
+}
+```
+
+Дальше: [Развертывание рабочих узлов Kubernetes](10-bootstrapping-kubernetes-workers.md)
