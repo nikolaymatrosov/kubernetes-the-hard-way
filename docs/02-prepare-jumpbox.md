@@ -142,17 +142,34 @@ yc dns zone list
 
 ### Jumpbox
 
+Coздайте сервисный аккаунт для управления кластером:
+
+```bash
+yc iam service-account create --name=kubernetes-the-hard-way
+```
+
+Выдайте сервисному аккаунту права на управление ресурсами в облаке:
+
+```bash
+yc resource-manager folder add-access-binding \
+  --service-account-name=kubernetes-the-hard-way \
+  --role=admin \
+  --name=default
+```
+
 Создайте jumpbox - центральную машину для управления кластером:
 
 ```bash
-SG_ID=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
+SG_ID_EX=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
+SG_ID_IN=$(yc vpc security-group get kubernetes-the-hard-way-allow-internal --format json | jq '.id' -r)
 yc compute instance create \
   --name jumpbox \
   --zone ru-central1-a \
-  --network-interface nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=$SG_ID \
+  --network-interface nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=\[$SG_ID_EX,$SG_ID_IN\] \
   --memory 2 \
   --cores 2 \
   --core-fraction 50 \
+  --service-account-name kubernetes-the-hard-way \
   --create-boot-disk size=20,type=network-ssd,image-folder-id=standard-images,image-family=debian-12 \
   --ssh-key ~/.ssh/id_rsa.pub \
   --platform-id standard-v3
