@@ -56,7 +56,8 @@ yc vpc subnet create \
 yc vpc security-group create --name=kubernetes-the-hard-way-allow-internal \
     --network-name=kubernetes-the-hard-way \
     --rule description=internal_allow,protocol=any,direction=ingress,port=any,predefined=self_security_group \
-    --rule description=internal_allow,protocol=any,direction=egress,port=any,predefined=self_security_group
+    --rule description=internal_allow,protocol=any,direction=egress,port=any,predefined=self_security_group \
+    --rule description=inet_external_allow,protocol=any,direction=egress,port=any,v4-cidrs=0.0.0.0/0
 ```
 
 Создайте группу безопасности разрешающую внешний входящий и исходящий SSH, ICMP, HTTPS трафик :
@@ -64,7 +65,7 @@ yc vpc security-group create --name=kubernetes-the-hard-way-allow-internal \
 ```bash
 yc vpc security-group create --name=kubernetes-the-hard-way-allow-external \
     --network-name=kubernetes-the-hard-way \
-    --rule description=internal_allow,protocol=any,direction=egress,port=any,v4-cidrs=0.0.0.0/0 \
+    --rule description=inet_external_allow,protocol=any,direction=egress,port=any,v4-cidrs=0.0.0.0/0 \
     --rule description=internal_allow,protocol=tcp,direction=ingress,port=22,v4-cidrs=0.0.0.0/0 \
     --rule description=internal_allow,protocol=tcp,direction=ingress,port=6443,v4-cidrs=0.0.0.0/0
 ```

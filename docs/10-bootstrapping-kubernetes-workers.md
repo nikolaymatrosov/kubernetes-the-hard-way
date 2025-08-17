@@ -1,89 +1,91 @@
-# Развертывание воркеров Kubernetes
+# Развертывание рабочих узлов Kubernetes
 
-В этой лабораторной вы настроите две ноды с воркерами Kubernetes. Будут установлены следующие компоненты:
-[runc](https://github.com/opencontainers/runc)
-, [container networking plugins](https://github.com/containernetworking/cni)
-, [containerd](https://github.com/containerd/containerd), [kubelet](https://kubernetes.io/docs/admin/kubelet) и
-[kube-proxy](https://kubernetes.io/docs/concepts/cluster-administration/proxies).
+В этой лабораторной вы развернете два рабочих узла Kubernetes. Будут установлены следующие компоненты: [runc](https://github.com/opencontainers/runc), [container networking plugins](https://github.com/containernetworking/cni), [containerd](https://github.com/containerd/containerd), [kubelet](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet) и [kube-proxy](https://kubernetes.io/docs/concepts/cluster-administration/proxies).
 
-## Важное
+## Предварительные требования
 
-Команды из этой лабораторной выполняются на каждом инстансе воркере: `node-0` и `node-1`. Зайдите на каждый инстанс.
+Команды в этом разделе должны выполняться с `jumpbox`.
 
-### Параллельное выполнение команд через tmux
-
-[tmux](https://github.com/tmux/tmux/wiki) может быть использован для параллельного выполнения команд на нескольких
-инстансах. Смотри [Параллельное выполнение команд в tmux](01-prerequisites.md)
-
-## Настройка Kubernetes Worker Node
-
-### Подключение к worker nodes
+Скопируйте бинарные файлы Kubernetes и файлы systemd unit на каждый экземпляр рабочего узла:
 
 ```bash
-# Подключитесь к node-0
-ssh yc-user@<node-0-external-ip>
+for HOST in node-0 node-1; do
+  SUBNET=$(grep ${HOST} machines.txt | cut -d " " -f 4)
+  sed "s|SUBNET|$SUBNET|g" \
+    configs/10-bridge.conf > 10-bridge.conf
 
-# Подключитесь к node-1
-ssh yc-user@<node-1-external-ip>
+  sed "s|SUBNET|$SUBNET|g" \
+    configs/kubelet-config.yaml > kubelet-config.yaml
+
+  scp 10-bridge.conf kubelet-config.yaml \
+  root@${HOST}:~/
+done
 ```
-
-### Распаковка конфигураций
 
 ```bash
-# Распакуйте конфигурации
-tar -xzf node-0-certificates.tar.gz  # на node-0
-tar -xzf node-1-certificates.tar.gz  # на node-1
+for HOST in node-0 node-1; do
+  scp \
+    downloads/worker/* \
+    downloads/client/kubectl \
+    configs/99-loopback.conf \
+    configs/containerd-config.toml \
+    configs/kube-proxy-config.yaml \
+    units/containerd.service \
+    units/kubelet.service \
+    units/kube-proxy.service \
+    root@${HOST}:~/
+done
 ```
 
-Установите системные зависимости:
+```bash
+for HOST in node-0 node-1; do
+  scp \
+    downloads/cni-plugins/* \
+    root@${HOST}:~/cni-plugins/
+done
+```
+
+Команды в следующем разделе должны выполняться на каждом экземпляре рабочего узла: `node-0`, `node-1`. Подключитесь к экземпляру рабочего узла используя команду `ssh`. Пример:
+
+```bash
+ssh root@node-0
+```
+
+## Подготовка рабочего узла Kubernetes
+
+Установите зависимости ОС:
 
 ```bash
 {
-  sudo apt-get update
-  sudo apt-get -y install socat conntrack ipset
+  apt-get update
+  apt-get -y install socat conntrack ipset kmod
 }
 ```
 
-> `socat` необходим чтобы выполнять `kubectl port-forward`.
+> Бинарный файл socat обеспечивает поддержку команды `kubectl port-forward`.
 
-### Отключаем Swap
+### Отключение Swap
 
-По умолчанию кублет будет падать если [swap](https://help.ubuntu.com/community/SwapFaq) включен.
-[Рекумендуется](https://github.com/kubernetes/kubernetes/issues/7294) отключить своп, чтобы быть уверенным, что
-Kubernetes правильное выделение ресурсов и качство работы.
+Kubernetes имеет ограниченную поддержку использования swap памяти, поскольку сложно предоставлять гарантии и учитывать использование памяти подами когда задействован swap.
 
-Проверьте, что своп включен:
+Проверьте, отключен ли swap:
 
 ```bash
-sudo swapon --show
+swapon --show
 ```
 
-Если вывод пустой, то своп отключен. Если же он включен, то выполните следующую команду, чтобы его отключить:
+Если вывод пустой, то swap отключен. Если swap включен, выполните следующую команду, чтобы немедленно отключить swap:
 
 ```bash
-sudo swapoff -a
+swapoff -a
 ```
 
-> Чтобы убедится, что своп останется отключенным после перезагрузки проверьте инструкцию вашего дистрибутива Linux.
+> Чтобы убедиться, что swap остается отключенным после перезагрузки, обратитесь к документации вашего дистрибутива Linux.
 
-### Скачайте и установите исполняемые файлы воркеров
-
-```bash
-K8S_VERSION=v1.32.3
-wget -q --show-progress --https-only --timestamping \
-  https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.32.0/crictl-v1.32.0-linux-amd64.tar.gz \
-  https://github.com/opencontainers/runc/releases/download/v1.3.0-rc.1/runc.amd64 \
-  https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-amd64-v1.6.2.tgz \
-  https://github.com/containerd/containerd/releases/download/v2.1.0/containerd-2.1.0-linux-amd64.tar.gz \
-  https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kubectl \
-  https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kube-proxy \
-  https://storage.googleapis.com/kubernetes-release/release/${K8S_VERSION}/bin/linux/amd64/kubelet
-```
-
-Создайте необходимые директории:
+Создайте директории для установки:
 
 ```bash
-sudo mkdir -p \
+mkdir -p \
   /etc/cni/net.d \
   /opt/cni/bin \
   /var/lib/kubelet \
@@ -92,239 +94,114 @@ sudo mkdir -p \
   /var/run/kubernetes
 ```
 
-Установите исполняемые файлы:
+Установите бинарные файлы рабочего узла:
 
 ```bash
 {
-  mkdir containerd
-  tar -xvf crictl-v1.32.0-linux-amd64.tar.gz
-  tar -xvf containerd-2.1.0-linux-amd64.tar.gz -C containerd
-  sudo tar -xvf cni-plugins-linux-amd64-v1.6.2.tgz -C /opt/cni/bin/
-  sudo mv runc.amd64 runc
-  chmod +x crictl kubectl kube-proxy kubelet runc 
-  sudo mv crictl kubectl kube-proxy kubelet runc /usr/local/bin/
-  sudo mv containerd/bin/* /bin/
+  mv crictl kube-proxy kubelet runc \
+    /usr/local/bin/
+  mv containerd containerd-shim-runc-v2 containerd-stress /bin/
+  mv cni-plugins/* /opt/cni/bin/
 }
 ```
 
-### Настройте CNI сети
+### Настройка CNI сети
 
-Получите CIDR диапазон для подов из метаданных текущего инстанса:
-
-```bash
-POD_CIDR=$(curl -s -H "Metadata-Flavor: Google" \
-  http://metadata.google.internal/computeMetadata/v1/instance/attributes/pod-cidr)
-```
-
-Создайте конфигурационный файл CNI:
+Создайте конфигурационный файл сети `bridge`:
 
 ```bash
-sudo tee /etc/cni/net.d/10-bridge.conf <<EOF
-{
-    "cniVersion": "1.0.0",
-    "name": "bridge",
-    "type": "bridge",
-    "bridge": "cnio0",
-    "isGateway": true,
-    "ipMasq": true,
-    "ipam": {
-        "type": "host-local",
-        "ranges": [
-          [{"subnet": "${POD_CIDR}"}]
-        ],
-        "routes": [{"dst": "0.0.0.0/0"}]
-    }
-}
-EOF
+mv 10-bridge.conf 99-loopback.conf /etc/cni/net.d/
 ```
 
-Создайте конфигурационный файл для loopback:
-
-```bash
-sudo tee /etc/cni/net.d/99-loopback.conf <<EOF
-{
-    "cniVersion": "1.0.0",
-    "name": "loopback",
-    "type": "loopback"
-}
-EOF
-```
-
-### Настройте containerd
-
-Создайте конфигурационный файл containerd:
-
-```bash
-sudo mkdir -p /etc/containerd/
-
-cat << EOF | sudo tee /etc/containerd/config.toml
-[plugins]
-  [plugins.cri.containerd]
-    snapshotter = "overlayfs"
-    [plugins.cri.containerd.default_runtime]
-      runtime_type = "io.containerd.runtime.v2.linux"
-      runtime_engine = "/usr/local/bin/runc"
-      runtime_root = ""
-    [plugins.cri.containerd.untrusted_workload_runtime]
-      runtime_type = "io.containerd.runtime.v2.linux"
-      runtime_engine = "/usr/local/bin/runc"
-      runtime_root = "/var/lib/containerd/io.containerd.runtime.v2.linux"
-EOF
-```
-
-Создайте systemd сервис для containerd:
-
-```bash
-cat <<EOF | sudo tee /etc/systemd/system/containerd.service
-[Unit]
-Description=containerd container runtime
-Documentation=https://containerd.io
-After=network.target local-fs.target
-
-[Service]
-ExecStartPre=-/sbin/modprobe overlay
-ExecStart=/bin/containerd
-Restart=always
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOFILE=1048576
-LimitNPROC=infinity
-LimitCORE=infinity
-TasksMax=infinity
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### Настройте kubelet
-
-Создайте конфигурационный файл для kubelet:
-
-```bash
-sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
-```
-
-Создайте systemd сервис для kubelet:
-
-```bash
-cat <<EOF | sudo tee /etc/systemd/system/kubelet.service
-[Unit]
-Description=Kubernetes Kubelet
-Documentation=https://github.com/kubernetes/kubernetes
-After=containerd.service
-Requires=containerd.service
-
-[Service]
-ExecStart=/usr/local/bin/kubelet \\
-  --config=/var/lib/kubelet/kubelet-config.yaml \\
-  --container-runtime-endpoint=unix:///run/containerd/containerd.sock \\
-  --kubeconfig=/var/lib/kubelet/kubeconfig \\
-  --register-node=true \\
-  --v=2
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-Создайте конфигурационный файл kubelet:
-
-```bash
-cat <<EOF | sudo tee /var/lib/kubelet/kubelet-config.yaml
-kind: KubeletConfiguration
-apiVersion: kubelet.config.k8s.io/v1beta1
-authentication:
-  anonymous:
-    enabled: false
-  webhook:
-    enabled: true
-  x509:
-    clientCAFile: "/var/lib/kubernetes/ca.pem"
-authorization:
-  mode: Webhook
-clusterDomain: "cluster.local"
-clusterDNS:
-- "10.32.0.10"
-runtimeRequestTimeout: "15m"
-tlsCertFile: "/var/lib/kubernetes/${HOSTNAME}.pem"
-tlsPrivateKeyFile: "/var/lib/kubernetes/${HOSTNAME}-key.pem"
-serverTLSBootstrap: true
-EOF
-```
-
-### Настройте kube-proxy
-
-Создайте конфигурационный файл для kube-proxy:
-
-```bash
-sudo mv kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig
-```
-
-Создайте конфигурационный файл kube-proxy:
-
-```bash
-cat <<EOF | sudo tee /var/lib/kube-proxy/kube-proxy-config.yaml
-kind: KubeProxyConfiguration
-apiVersion: kubeproxy.config.k8s.io/v1alpha1
-clientConnection:
-  kubeconfig: "/var/lib/kube-proxy/kubeconfig"
-mode: "iptables"
-clusterCIDR: "10.200.0.0/16"
-EOF
-```
-
-Создайте systemd сервис для kube-proxy:
-
-```bash
-cat <<EOF | sudo tee /etc/systemd/system/kube-proxy.service
-[Unit]
-Description=Kubernetes Kube Proxy
-Documentation=https://github.com/kubernetes/kubernetes
-
-[Service]
-ExecStart=/usr/local/bin/kube-proxy \\
-  --config=/var/lib/kube-proxy/kube-proxy-config.yaml
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### Запустите сервисы
+Чтобы убедиться, что сетевой трафик, проходящий через CNI сеть `bridge`, обрабатывается `iptables`, загрузите и настройте модуль ядра `br-netfilter`:
 
 ```bash
 {
-  sudo systemctl daemon-reload
-  sudo systemctl enable containerd kubelet kube-proxy
-  sudo systemctl start containerd kubelet kube-proxy
+  modprobe br-netfilter
+  echo "br-netfilter" >> /etc/modules-load.d/modules.conf
 }
 ```
 
-### Проверка
-
-Проверьте статус сервисов:
-
 ```bash
-sudo systemctl status containerd kubelet kube-proxy
+{
+  echo "net.bridge.bridge-nf-call-iptables = 1" \
+    >> /etc/sysctl.d/kubernetes.conf
+  echo "net.bridge.bridge-nf-call-ip6tables = 1" \
+    >> /etc/sysctl.d/kubernetes.conf
+  sysctl -p /etc/sysctl.d/kubernetes.conf
+}
 ```
 
-## Альтернатива: Больше worker nodes (для продакшена)
+### Настройка containerd
 
-Для продакшен окружения рекомендуется использовать больше worker nodes. Вот пример для 3 worker nodes:
+Установите конфигурационные файлы `containerd`:
 
 ```bash
-# Создайте дополнительные worker nodes
-for i in 2; do
-  name=node-${i}
-  # ... создание машины
-done
+{
+  mkdir -p /etc/containerd/
+  mv containerd-config.toml /etc/containerd/config.toml
+  mv containerd.service /etc/systemd/system/
+}
 ```
 
-Дальше: [Настраиваем удаленный доступ kubectl](11-configuring-kubectl.md)
+### Настройка Kubelet
+
+Создайте конфигурационный файл `kubelet-config.yaml`:
+
+```bash
+{
+  mv kubelet-config.yaml /var/lib/kubelet/
+  mv kubelet.service /etc/systemd/system/
+}
+```
+
+### Настройка Kubernetes Proxy
+
+```bash
+{
+  mv kube-proxy-config.yaml /var/lib/kube-proxy/
+  mv kube-proxy.service /etc/systemd/system/
+}
+```
+
+### Запуск служб рабочего узла
+
+```bash
+{
+  systemctl daemon-reload
+  systemctl enable containerd kubelet kube-proxy
+  systemctl start containerd kubelet kube-proxy
+}
+```
+
+Проверьте, запущена ли служба kubelet:
+
+```bash
+systemctl is-active kubelet
+```
+
+```text
+active
+```
+
+Убедитесь, что вы выполнили шаги в этом разделе на каждом рабочем узле, `node-0` и `node-1`, прежде чем переходить к следующему разделу.
+
+## Проверка
+
+Выполните следующие команды с машины `jumpbox`.
+
+Выведите список зарегистрированных узлов Kubernetes:
+
+```bash
+ssh root@server \
+  "kubectl get nodes \
+  --kubeconfig admin.kubeconfig"
+```
+
+```
+NAME     STATUS   ROLES    AGE    VERSION
+node-0   Ready    <none>   1m     v1.32.3
+node-1   Ready    <none>   10s    v1.32.3
+```
+
+Дальше: [Настройка kubectl для удаленного доступа](11-configuring-kubectl.md)
