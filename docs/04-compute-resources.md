@@ -56,7 +56,7 @@ yc vpc subnet update \
 
 ## Создание Control Plane узла
 
-Создайте виртуальную машину для control plane:
+Создайте виртуальную машину для control plane, выполнив следующую команду с локальной машины:
 
 ```bash
 SG_ID_EX=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
@@ -112,9 +112,9 @@ yc compute instance list
 |          ID          |  NAME  |    ZONE ID    | STATUS  |  EXTERNAL IP  | INTERNAL IP |
 +----------------------+--------+---------------+---------+---------------+-------------+
 | fhm****************f | jumpbox| ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.5  |
-| abc****************d | server | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.10 |
-| def****************g | node-0 | ru-central1-a | RUNNING |               | 10.240.0.20 |
-| ghi****************j | node-1 | ru-central1-a | RUNNING |               | 10.240.0.21 |
+| fhm****************d | server | ru-central1-a | RUNNING | 51.250.**.*** | 10.240.0.10 |
+| fhm****************g | node-0 | ru-central1-a | RUNNING |               | 10.240.0.20 |
+| fhm****************j | node-1 | ru-central1-a | RUNNING |               | 10.240.0.21 |
 +----------------------+--------+---------------+---------+---------------+-------------+
 ```
 
@@ -132,7 +132,7 @@ IPV4_ADDRESS FQDN HOSTNAME POD_SUBNET
 и IP-подсети `POD_SUBNET`. Kubernetes назначает один IP-адрес на `pod`, и `POD_SUBNET` представляет уникальный диапазон
 IP-адресов, назначенный каждой машине в кластере для этой цели.
 
-Создайте файл `machines.txt` с внутренними IP-адресами ваших машин:
+Создайте файл `machines.txt` с внутренними IP-адресами ваших машин на `jumpbox`:
 
 ```bash
 {
@@ -195,11 +195,11 @@ ssh-keygen
 
 ```text
 Generating public/private rsa key pair.
-Enter file in which to save the key (/root/.ssh/id_rsa):
-Enter passphrase (empty for no passphrase):
-Enter same passphrase again:
-Your identification has been saved in /root/.ssh/id_rsa
-Your public key has been saved in /root/.ssh/id_rsa.pub
+Enter file in which to save the key (/home/yc-user/.ssh/id_rsa): 
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /home/yc-user/.ssh/id_rsa
+Your public key has been saved in /home/yc-user/.ssh/id_rsa.pub
 ```
 
 Скопируйте SSH публичный ключ на каждую машину:
@@ -256,7 +256,7 @@ node-0.kubernetes.local
 node-1.kubernetes.local
 ```
 
-## Таблица поиска хостов
+## Редактирование файла `/etc/hosts`
 
 В этом разделе вы сгенерируете файл `hosts`, который будет добавлен к файлу `/etc/hosts` на `jumpbox` и к файлам
 `/etc/hosts` на всех трех участниках кластера, используемых в этом туториале. Это позволит каждой машине быть доступной
@@ -333,8 +333,11 @@ done
 ```
 
 ```text
+Warning: Permanently added 'server' (ED25519) to the list of known hosts.
 server
+Warning: Permanently added 'node-0' (ED25519) to the list of known hosts.
 node-0
+Warning: Permanently added 'node-1' (ED25519) to the list of known hosts.
 node-1
 ```
 

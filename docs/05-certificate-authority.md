@@ -27,11 +27,17 @@ cat ca.conf
     -out ca.crt
 }
 ```
+Проверим результат выполнения вышеуказанной команды:
+
+```bash
+ls -1 ca.crt ca.key
+```
 
 Результат:
 
 ```txt
-ca.crt ca.key
+ca.crt
+ca.key
 ```
 
 ## Создание клиентских и серверных сертификатов
@@ -70,6 +76,36 @@ done
 ```bash
 ls -1 *.crt *.key *.csr
 ```
+Результат:
+```text
+admin.crt
+admin.csr
+admin.key
+ca.crt
+ca.key
+kube-api-server.crt
+kube-api-server.csr
+kube-api-server.key
+kube-controller-manager.crt
+kube-controller-manager.csr
+kube-controller-manager.key
+kube-proxy.crt
+kube-proxy.csr
+kube-proxy.key
+kube-scheduler.crt
+kube-scheduler.csr
+kube-scheduler.key
+node-0.crt
+node-0.csr
+node-0.key
+node-1.crt
+node-1.csr
+node-1.key
+service-accounts.crt
+service-accounts.csr
+service-accounts.key
+```
+
 
 ## Распределение клиентских и серверных сертификатов
 

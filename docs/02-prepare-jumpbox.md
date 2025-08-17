@@ -88,51 +88,6 @@ yc vpc security-group create --name=kubernetes-the-hard-way-allow-balancer \
 yc vpc security-group list
 ```
 
-### Публичный IP адрес для Kubernetes
-
-Зарезервируем внешний статический IP адрес, который потом используем на балансере для доступа к Kubernetes API.
-
-```bash
-yc vpc address create --name=kubernetes-the-hard-way --external-ipv4=zone=ru-central1-a
-```
-
-Убедитесь, что адрес был создан.
-
-```bash
-yc vpc address list
-```
-
-> output
-
-```
-+----------------------+-------------------------+----------------+----------+-------+
-|          ID          |          NAME           |    ADDRESS     | RESERVED | USED  |
-+----------------------+-------------------------+----------------+----------+-------+
-| e9b***************** | kubernetes-the-hard-way | 51.250.***.*** | true     | false |
-+----------------------+-------------------------+----------------+----------+-------+
-```
-
-## Создадим внутреннюю DNS зону
-
-```bash
-NETWORK_ID=$(yc vpc network get kubernetes-the-hard-way --format json | jq '.id' -r)
-yc dns zone create --name=kubernetes --zone=. --private-visibility=true --network-ids=${NETWORK_ID}
-```
-
-Убедитесь, что зона была создана:
-
-```bash
-yc dns zone list
-```
-> output
-
-```
-+----------------------+------------+------+------------------------------+-------------+
-|          ID          |    NAME    | ZONE |          VISIBILITY          | DESCRIPTION |
-+----------------------+------------+------+------------------------------+-------------+
-| dns52ttd************ | kubernetes |    . | PRIVATE enpllq3iak4qejns3gmb |             |
-+----------------------+------------+------+------------------------------+-------------+
-```
 ## Доступ по SSH
 
 Для доступа по SSH будет использоваться пара ключей публичный и приватный. Публичный будет передан при создании ВМ в
@@ -164,9 +119,10 @@ yc resource-manager folder add-access-binding \
 SG_ID_EX=$(yc vpc security-group get kubernetes-the-hard-way-allow-external --format json | jq '.id' -r)
 SG_ID_IN=$(yc vpc security-group get kubernetes-the-hard-way-allow-internal --format json | jq '.id' -r)
 yc compute instance create \
+  --hostname jumpbox \
   --name jumpbox \
   --zone ru-central1-a \
-  --network-interface nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=\[$SG_ID_EX,$SG_ID_IN\] \
+  --network-interface ipv4-address=10.240.0.5,nat-ip-version=ipv4,subnet-name=kubernetes,security-group-ids=\[$SG_ID_EX,$SG_ID_IN\] \
   --memory 2 \
   --cores 2 \
   --core-fraction 50 \
@@ -200,6 +156,7 @@ yc compute instance list
 Для этого скопируем ее внешний ip в команду:
 
 ```bash
+ssh-add ~/.ssh/id_rsa
 # Получите внешний IP jumpbox
 JUMPBOX_IP=$(yc compute instance get jumpbox --format json | jq '.network_interfaces[0].primary_v4_address.one_to_one_nat.address' -r)
 echo "Jumpbox IP: $JUMPBOX_IP"

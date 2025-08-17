@@ -2,7 +2,7 @@
 
 В этой лабораторной вы
 сгенерируете [файлы конфигурации Kubernetes](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
-, также известные как `kubeconfigs`. При помощи них клиенты находят сервера и аутентифицируются на серверах Kubernetes
+, также известные как `kubeconfigs`. При их помощи клиенты находят сервера и аутентифицируются на серверах Kubernetes
 API.
 
 ## Важное
@@ -13,21 +13,6 @@ API.
 ## Клиентские конфиги для аутентификации
 
 На этом шаге вы сгенерируете файлы kubeconfig для клиентов `kubelet` и пользователя `admin`.
-
-### Получение публичного IP адреса Kubernetes
-
-Каждый kubeconfig требует сервер Kubernetes API, к которому будет подключаться. Для обеспечения высокой доступности
-будем использовать IP-адрес, который назначим внешнему балансировщику нагрузки, который поставим перед серверами API
-Kubernetes.
-
-Получим IP адрес `kubernetes-the-hard-way`:
-
-```bash
-# На jumpbox
-cd ~/kubernetes-the-hard-way/certificates
-
-KUBERNETES_PUBLIC_ADDRESS=$(yc vpc address get kubernetes-the-hard-way --format json | jq '.external_ipv4_address.address' -r)
-```
 
 ### Конфигурационный файл для kubelet
 
@@ -45,7 +30,7 @@ for host in node-0 node-1; do
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
+    --server=https://server.kubernetes.local:6443 \
     --kubeconfig=${host}.kubeconfig
 
   kubectl config set-credentials system:node:${host} \
@@ -96,7 +81,7 @@ node-1.kubeconfig
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443 \
+    --server=https://server.kubernetes.local:6443 \
     --kubeconfig=kube-proxy.kubeconfig
 
   kubectl config set-credentials system:kube-proxy \
@@ -130,7 +115,7 @@ kube-proxy.kubeconfig
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
+    --server=https://server.kubernetes.local:6443 \
     --kubeconfig=kube-controller-manager.kubeconfig
 
   kubectl config set-credentials system:kube-controller-manager \
@@ -164,7 +149,7 @@ kube-controller-manager.kubeconfig
   kubectl config set-cluster kubernetes-the-hard-way \
     --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://127.0.0.1:6443 \
+    --server=https://server.kubernetes.local:6443 \
     --kubeconfig=kube-scheduler.kubeconfig
 
   kubectl config set-credentials system:kube-scheduler \

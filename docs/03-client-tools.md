@@ -1,30 +1,23 @@
 # Установка инструментов
 
-На этом шаге вы установите инструменты командной строки, которые понадобятся для выполнения туториала: 
-[cfssl](https://github.com/cloudflare/cfssl), [cfssljson](https://github.com/cloudflare/cfssl) 
+На этом шаге вы установите инструменты командной строки, которые понадобятся для выполнения туториала:
+[cfssl](https://github.com/cloudflare/cfssl), [cfssljson](https://github.com/cloudflare/cfssl)
 и [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl).
 
 ## Подход с Jumpbox
 
-В современной версии туториала мы используем **jumpbox** - центральную машину для управления кластером. 
+В современной версии туториала мы используем **jumpbox** - центральную машину для управления кластером.
 Это упрощает развертывание и обновление компонентов.
 
+## Установка Yandex Cloud CLI
 
-## Установка CFSSL
-`cfssl` и `cfssljson` утилиты, которые понадобятся для настройки 
-[инфраструктуры открытых ключей](https://ru.wikipedia.org/wiki/Инфраструктура_открытых_ключей) и генерации TLS 
-сертификатов.
+Установите Yandex Cloud CLI, который понадобится для управления ресурсами в Yandex Cloud.
 
-Скачайте и установите `cfssl` и `cfssljson`:
+Для установки Yandex Cloud CLI выполните следующие команды:
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-wget https://golang.org/dl/go1.24.5.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
-source ~/.bashrc
 
-go install github.com/cloudflare/cfssl/cmd/...@latest
 sudo apt install -y jq git
 curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
 source ~/.bashrc
@@ -32,28 +25,16 @@ source ~/.bashrc
 
 ### Проверка
 
-Проверьте, что `cfssl` и `cfssljson` имеют версии 1.6.4 или выше:
-
 ```bash
-cfssl version
-```
-
-> output
-
-```
-Version: dev
-Runtime: go1.24.5
-```
-
-```bash
-cfssljson --version
+yc --version
 ```
 > output
 ```
-Version: dev
-Runtime: go1.24.5
+Yandex Cloud CLI 0.158.0 linux/amd64
 ```
+
 ## Склонируйте репозиторий
+
 Склонируйте репозиторий с туториалом:
 
 ```bash
@@ -62,6 +43,7 @@ cd kubernetes-the-hard-way
 ```
 
 ## Скачайте бинарные файлы
+
 Скачайте необходимые бинарные файлы указанные в `downloads.txt`
 
 ```bash
@@ -77,7 +59,21 @@ wget -q --show-progress \
 ```bash
 ls -oh downloads
 ```
-Extract the component binaries from the release archives and organize them under the downloads directory.
+> output
+```
+total 566M
+-rw-r--r-- 1 yc-user 51M Jan  6  2025 cni-plugins-linux-amd64-v1.6.2.tgz
+-rw-r--r-- 1 yc-user 38M Mar 18 02:33 containerd-2.1.0-beta.0-linux-amd64.tar.gz
+-rw-r--r-- 1 yc-user 19M Dec  9  2024 crictl-v1.32.0-linux-amd64.tar.gz
+-rw-r--r-- 1 yc-user 23M Mar 27 23:15 etcd-v3.6.0-rc.3-linux-amd64.tar.gz
+-rw-r--r-- 1 yc-user 89M Mar 12 03:31 kube-apiserver
+-rw-r--r-- 1 yc-user 83M Mar 12 03:31 kube-controller-manager
+-rw-r--r-- 1 yc-user 55M Mar 12 03:31 kubectl
+-rw-r--r-- 1 yc-user 74M Mar 12 03:31 kubelet
+-rw-r--r-- 1 yc-user 64M Mar 12 03:31 kube-proxy
+-rw-r--r-- 1 yc-user 63M Mar 12 03:31 kube-scheduler
+-rw-r--r-- 1 yc-user 12M Mar  4 12:14 runc.amd64
+```
 
 Распакуйте бинарные файлы из архивов и создайте структуру директорий для управления бинарными файлами:
 
@@ -104,6 +100,7 @@ Extract the component binaries from the release archives and organize them under
   mv downloads/runc.${ARCH} downloads/worker/runc
 }
 ```
+
 ```bash
 rm -rf downloads/*gz
 ```
@@ -115,8 +112,6 @@ rm -rf downloads/*gz
   chmod +x downloads/{client,cni-plugins,controller,worker}/*
 }
 ```
-
-
 
 ## Установите kubectl
 
