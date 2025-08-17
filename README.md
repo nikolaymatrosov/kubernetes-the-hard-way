@@ -31,7 +31,7 @@ understand how everything fits together.
 Kubernetes The Hard Way guides you through bootstrapping a highly available Kubernetes cluster with end-to-end
 encryption between components and RBAC authentication.
 
-### Modern Components (Updated 2024)
+### Modern Components (Updated 2025-08)
 
 * [kubernetes](https://github.com/kubernetes/kubernetes) v1.32.3
 * [containerd](https://github.com/containerd/containerd) v2.1.0
@@ -46,15 +46,6 @@ encryption between components and RBAC authentication.
 * **Jumpbox**: Central management machine
 * **Server**: Single control plane node
 * **Worker Nodes**: Two worker nodes for pod scheduling
-
-### Modern Features
-
-* **Pod Security Standards**: Replaced deprecated PodSecurityPolicies
-* **External Cloud Controller Manager**: Yandex Cloud integration
-* **User Namespaces**: Enhanced container isolation (v1.33+)
-* **EndpointSlices**: Modern endpoints API
-* **nftables Backend**: Improved networking performance
-* **Traffic Distribution**: Advanced load balancing (v1.32+)
 
 ## Labs
 
@@ -74,14 +65,4 @@ basic infrastructure requirements the lessons learned in this tutorial can be ap
 * [Provisioning Pod Network Routes](docs/11-pod-network-routes.md)
 * [Deploying the DNS Cluster Add-on](docs/12-dns-addon.md)
 * [Smoke Test](docs/13-smoke-test.md)
-* [Modern Kubernetes Features](docs/14-modern-features.md)
-* [Monitoring and Observability](docs/15-monitoring-observability.md)
-* [Cleaning Up](docs/16-cleanup.md)
-
-## Cost Estimation
-
-Expected cluster cost: ~40-60₽ per hour (960-1440₽ per day)
-
-## Migration from Previous Version
-
-If you're migrating from the previous version (Kubernetes v1.21), see the [TODO.md](TODO.md) for detailed analysis of changes and migration steps.
+* [Cleaning Up](docs/14-cleanup.md)

@@ -1,104 +1,81 @@
-# Настраиваем сетевые маршруты для подов
+# Настройка сетевых маршрутов для подов
 
-Поды назначенные на ноды получают IP-адрес из Pod CIDR диапазона ноды. В этот момент поды не могут общаться с подами
-бегущими на других нодах, т.к. отсутствуют [сетевые маршруты](https://cloud.yandex.ru/docs/vpc/concepts/static-routes).
+Поды, назначенные на узел, получают IP-адрес из диапазона Pod CIDR узла. В этот момент поды не могут общаться с другими
+подами, работающими на разных узлах, из-за отсутствующих
+сетевых маршрутов.
 
-В этой лабораторной вы создадите маршруты для каждого воркера, который создает соответствие CIDR диапазона подов и
-внутреннего IP-адреса ноды.
+В этой лабораторной работе вы создадите маршрут для каждого рабочего узла, который сопоставляет диапазон Pod CIDR узла с
+внутренним IP-адресом узла.
 
-> Существуют
-> и [другие способы](https://kubernetes.io/docs/concepts/cluster-administration/networking/#how-to-achieve-this)
-> добиться
-> того же эффекта в сетевой модели Kubernetes.
+> Существуют [другие способы](https://kubernetes.io/docs/concepts/cluster-administration/networking/#how-to-achieve-this)
+реализации сетевой модели Kubernetes.
 
-## Важное
+## Таблица маршрутизации
 
-**Все команды в этой главе выполняются на jumpbox** - центральной машине управления кластером. 
-Это упрощает процесс и обеспечивает централизованное управление сетевыми маршрутами.
+В этом разделе вы соберете информацию, необходимую для создания маршрутов в сети VPC `kubernetes-the-hard-way`.
 
-## Статические маршруты
-
-На этом шаге вы соберете всю информацию необходимую для того чтобы создать статические маршруты в
-сети `kubernetes-the-hard-way`.
-
-Выведите внутренний адрес и CIDR диапазона додов для каждого воркера:
+Выведите внутренний IP-адрес и диапазон Pod CIDR для каждого рабочего экземпляра:
 
 ```bash
-# На jumpbox
-for instance in node-0 node-1; do
-  yc compute instance get ${instance} --full --format json | jq '.network_interfaces[0].primary_v4_address.address+"\t"+.metadata."pod-cidr"' -r
-done 
+{
+  SERVER_IP=$(grep server machines.txt | cut -d " " -f 1)
+  NODE_0_IP=$(grep node-0 machines.txt | cut -d " " -f 1)
+  NODE_0_SUBNET=$(grep node-0 machines.txt | cut -d " " -f 4)
+  NODE_1_IP=$(grep node-1 machines.txt | cut -d " " -f 1)
+  NODE_1_SUBNET=$(grep node-1 machines.txt | cut -d " " -f 4)
+}
 ```
-
-> output
-
-```
-10.240.0.20     10.200.0.0/24
-10.240.0.21     10.200.1.0/24
-```
-
-## Маршруты
-
-Создаете сетевые маршруты для каждого инстанса:
 
 ```bash
-routes=()
-for i in 0 1; do
-  routes+=(--route destination=10.200.${i}.0/24,next-hop=10.240.0.2${i})
-done
-yc vpc route-table create --name=kubernetes-route --network-name=kubernetes-the-hard-way ${routes[@]}
+ssh root@server <<EOF
+  ip route add ${NODE_0_SUBNET} via ${NODE_0_IP}
+  ip route add ${NODE_1_SUBNET} via ${NODE_1_IP}
+EOF
 ```
-
-Посмотрите созданные машруты:
 
 ```bash
-yc vpc route-table get kubernetes-route
+ssh root@node-0 <<EOF
+  ip route add ${NODE_1_SUBNET} via ${NODE_1_IP}
+EOF
 ```
-
-> output
-
-```
-id: enp8***
-folder_id: b1g***
-created_at: "2022-04-18T10:19:52Z"
-name: kubernetes-route
-network_id: enp***
-static_routes:
-- destination_prefix: 10.200.0.0/24
-  next_hop_address: 10.240.0.20
-- destination_prefix: 10.200.1.0/24
-  next_hop_address: 10.240.0.21
-```
-
-Соединить подсеть и таблицу маршрутиризации:
 
 ```bash
-yc vpc subnet update kubernetes --route-table-name kubernetes-route
+ssh root@node-1 <<EOF
+  ip route add ${NODE_0_SUBNET} via ${NODE_0_IP}
+EOF
 ```
 
-## Проверка маршрутов
-
-Проверьте, что маршруты созданы корректно:
+## Проверка
 
 ```bash
-# Проверьте таблицу маршрутов
-yc vpc route-table get kubernetes-route --format json | jq '.static_routes'
-
-# Проверьте подсеть
-yc vpc subnet get kubernetes --format json | jq '.route_table_id'
+ssh root@server ip route
 ```
 
-## Альтернатива: Больше worker nodes (для продакшена)
-
-Для продакшен окружения с большим количеством worker nodes:
+```text
+default via XXX.XXX.XXX.XXX dev eth0 
+10.200.0.0/24 via XXX.XXX.XXX.XXX dev eth0 
+10.200.1.0/24 via XXX.XXX.XXX.XXX dev eth0 
+XXX.XXX.XXX.0/24 dev eth0 proto kernel scope link src XXX.XXX.XXX.XXX 
+```
 
 ```bash
-# Для 3 worker nodes
-routes=()
-for i in 0 1 2; do
-  routes+=(--route destination=10.200.${i}.0/24,next-hop=10.240.0.2${i})
-done
-yc vpc route-table create --name=kubernetes-route --network-name=kubernetes-the-hard-way ${routes[@]}
+ssh root@node-0 ip route
 ```
 
-Дальше: [Deploying the DNS Cluster Add-on](13-dns-addon.md)
+```text
+default via XXX.XXX.XXX.XXX dev eth0 
+10.200.1.0/24 via XXX.XXX.XXX.XXX dev eth0 
+XXX.XXX.XXX.0/24 dev eth0 proto kernel scope link src XXX.XXX.XXX.XXX 
+```
+
+```bash
+ssh root@node-1 ip route
+```
+
+```text
+default via XXX.XXX.XXX.XXX dev eth0 
+10.200.0.0/24 via XXX.XXX.XXX.XXX dev eth0 
+XXX.XXX.XXX.0/24 dev eth0 proto kernel scope link src XXX.XXX.XXX.XXX 
+```
+
+Далее: [Смоук тест](13-smoke-test.md)
