@@ -1,37 +1,48 @@
-# Настраиваем удаленный доступ kubectl
+# Настройка kubectl для удаленного доступа
 
-В этой лабораторной вы сгенерируете kubeconfig для утилиты `kubectl`, основанный на данных для авторизации
-пользователя `admin`.
+В этой лабораторной работе вы сгенерируете файл kubeconfig для утилиты командной строки `kubectl` на основе учетных
+данных пользователя `admin`.
 
-> Выполняйте команды из директории где у вас лежат сертификаты для `admin` на jumpbox.
+> Выполняйте команды в этой лабораторной работе на машине `jumpbox`.
 
-## Важное
+## Конфигурационный файл администратора Kubernetes
 
-**Все команды в этой главе выполняются на jumpbox** - центральной машине управления кластером. 
-Это упрощает процесс и обеспечивает централизованное управление доступом к кластеру.
+Каждый kubeconfig требует API-сервер Kubernetes для подключения.
 
-## Конфигурационный файл
-
-Каждый kubeconfig требует API сервер Kubernetes к которому будет подключаться. Для большей доступности мы используем IP
-балансера.
-
-Сгенерируйте kubeconfig подходящий, чтобы авторизоваться от имени пользователя `admin`:
+Вы должны быть в состоянии пинговать `server.kubernetes.local` на основе DNS-записи `/etc/hosts` из предыдущей
+лабораторной работы.
 
 ```bash
-# На jumpbox
-cd ~/kubernetes-the-hard-way/certificates
+curl --cacert ca.crt \
+  https://server.kubernetes.local:6443/version
+```
 
+```text
 {
-  KUBERNETES_PUBLIC_ADDRESS=$(yc vpc address get kubernetes-the-hard-way --format json | jq '.external_ipv4_address.address' -r)
+  "major": "1",
+  "minor": "32",
+  "gitVersion": "v1.32.3",
+  "gitCommit": "32cc146f75aad04beaaa245a7157eb35063a9f99",
+  "gitTreeState": "clean",
+  "buildDate": "2025-03-11T19:52:21Z",
+  "goVersion": "go1.23.6",
+  "compiler": "gc",
+  "platform": "linux/amd64"
+}
+```
 
+Сгенерируйте файл kubeconfig, подходящий для аутентификации в качестве пользователя `admin`:
+
+```bash
+{
   kubectl config set-cluster kubernetes-the-hard-way \
-    --certificate-authority=ca.pem \
+    --certificate-authority=ca.crt \
     --embed-certs=true \
-    --server=https://${KUBERNETES_PUBLIC_ADDRESS}:6443
+    --server=https://server.kubernetes.local:6443
 
   kubectl config set-credentials admin \
-    --client-certificate=admin.pem \
-    --client-key=admin-key.pem
+    --client-certificate=admin.crt \
+    --client-key=admin.key
 
   kubectl config set-context kubernetes-the-hard-way \
     --cluster=kubernetes-the-hard-way \
@@ -41,6 +52,10 @@ cd ~/kubernetes-the-hard-way/certificates
 }
 ```
 
+Результат выполнения приведенной выше команды должен создать файл kubeconfig в местоположении по умолчанию
+`~/.kube/config`, используемом утилитой командной строки `kubectl`. Это также означает, что вы можете запускать команду
+`kubectl` без указания конфигурации.
+
 ## Проверка
 
 Проверьте версию удаленного кластера Kubernetes:
@@ -49,58 +64,22 @@ cd ~/kubernetes-the-hard-way/certificates
 kubectl version
 ```
 
-> output
-
+```text
+Client Version: v1.32.3
+Kustomize Version: v5.5.0
+Server Version: v1.32.3
 ```
-Client Version: version.Info{Major:"1", Minor:"32", GitVersion:"v1.32.3", GitCommit:"a0c1c0b2d2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", GitTreeState:"clean", BuildDate:"2024-01-15T16:31:21Z", GoVersion:"go1.21.0", Compiler:"gc", Platform:"linux/amd64"}
-Server Version: version.Info{Major:"1", Minor:"32", GitVersion:"v1.32.3", GitCommit:"a0c1c0b2d2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", GitTreeState:"clean", BuildDate:"2024-01-15T16:25:06Z", GoVersion:"go1.21.0", Compiler:"gc", Platform:"linux/amd64"}
-```
 
-Выведите список нод удаленного кластера Kubernetes:
+Выведите список узлов в удаленном кластере Kubernetes:
 
 ```bash
 kubectl get nodes
 ```
 
-> output
-
 ```
-NAME     STATUS   ROLES    AGE     VERSION
-node-0   Ready    <none>   2m35s   v1.32.3
-node-1   Ready    <none>   2m35s   v1.32.3
+NAME     STATUS   ROLES    AGE    VERSION
+node-0   Ready    <none>   10m   v1.32.3
+node-1   Ready    <none>   10m   v1.32.3
 ```
 
-## Дополнительная проверка
-
-Проверьте компоненты кластера:
-
-```bash
-# Проверьте namespace kube-system
-kubectl get pods -n kube-system
-
-# Проверьте сервисы
-kubectl get services -n kube-system
-
-# Проверьте endpoints
-kubectl get endpoints -n kube-system
-```
-
-## Настройка для других пользователей
-
-Если вы хотите настроить доступ для других пользователей, создайте дополнительные kubeconfig файлы:
-
-```bash
-# Пример для пользователя developer
-kubectl config set-credentials developer \
-  --client-certificate=developer.pem \
-  --client-key=developer-key.pem
-
-kubectl config set-context developer-context \
-  --cluster=kubernetes-the-hard-way \
-  --user=developer
-
-# Сохраните в отдельный файл
-kubectl config view --flatten > developer-kubeconfig.yaml
-```
-
-Дальше: [Provisioning Pod Network Routes](12-pod-network-routes.md)
+Далее: [Предоставление маршрутов сети подов](12-pod-network-routes.md)
